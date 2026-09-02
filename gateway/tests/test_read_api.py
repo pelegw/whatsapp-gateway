@@ -115,3 +115,13 @@ def test_media_proxies_sidecar(client, archive, make_key, fake_sidecar):
     assert r.status_code == 200
     assert r.content == b"IMAGEBYTES"
     assert r.headers["content-type"].startswith("image/jpeg")
+
+
+def test_skill_endpoint_public_with_base_url(client):
+    # Public agent guide: no key required, placeholder substituted with base URL.
+    r = client.get("/skill")
+    assert r.status_code == 200
+    assert "WA_GW — agent guide" in r.text
+    assert "{{BASE_URL}}" not in r.text          # substituted
+    assert "http://testserver/v1/send" in r.text  # real base URL filled in
+    assert "text/markdown" in r.headers["content-type"]

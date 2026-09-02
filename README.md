@@ -126,6 +126,11 @@ cp -r integrations/claude-skill/whatsapp-gateway ~/.claude/skills/
 `Authorization: Bearer wagw_...` key. (The interactive `/docs` is disabled in
 public mode, so the table here is the reference.)
 
+**Self-describing guide.** The gateway serves the agent guide at **`GET /skill`**
+(public, no key) with the live base URL filled in — hand an agent
+`https://<your-host>/skill` and it can learn the endpoints, roles, and response
+model on its own. Source: `gateway/app/templates/agent-guide.md`.
+
 Give each agent its own key scoped to a **role** (`read-only` by default). The
 gateway enforces the rest.
 
