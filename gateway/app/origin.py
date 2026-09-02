@@ -19,7 +19,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from .config import get_settings
 
 # Health is exempt so container/orchestrator probes work without the secret.
-_EXEMPT_PATHS = frozenset({"/v1/health"})
+_EXEMPT_PATHS = frozenset({"/health", "/v1/health"})
 
 
 def _headers(scope: Scope) -> dict[str, str]:

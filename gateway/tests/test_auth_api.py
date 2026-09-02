@@ -43,6 +43,7 @@ def test_admin_endpoints_reject_agent_keys_and_no_token(client, make_key):
 
 
 def test_health_needs_no_auth(client, fake_sidecar):
-    r = client.get("/v1/health")
-    assert r.status_code == 200
-    assert r.json()["gateway"] == "ok"
+    for path in ("/v1/health", "/health"):   # root alias for LB/uptime probes
+        r = client.get(path)
+        assert r.status_code == 200, path
+        assert r.json()["gateway"] == "ok"

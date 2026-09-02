@@ -10,6 +10,9 @@ from fastapi import APIRouter
 router = APIRouter()
 
 
+# Both paths return the same liveness. /health is the conventional root probe
+# for load balancers / uptime monitors; /v1/health keeps the API namespace.
+@router.get("/health", include_in_schema=False)
 @router.get("/v1/health")
 def health() -> dict:
     return {"gateway": "ok"}
