@@ -101,6 +101,34 @@ Tools exposed: `list_chats`, `read_messages`, `search_messages`,
 `list_my_drafts`. There is deliberately **no approve tool** — approval is
 human-only.
 
+### Point agents at the gateway
+
+Agents use the gateway two ways:
+
+**MCP (Claude Code / Claude Desktop / any MCP client) — the main path.** Add the
+server; its tools are self-describing, so the agent immediately knows the
+capabilities:
+```bash
+claude mcp add --transport http wa-gw https://<your-host>/mcp   --header "Authorization: Bearer wagw_..."
+```
+Tools: `list_chats`, `read_messages`, `search_messages`, `search_contacts`,
+`send_message`, `create_draft`, `get_draft_status`, `list_my_drafts`.
+
+**A skill for good behavior (recommended).** `integrations/claude-skill/whatsapp-gateway/SKILL.md`
+teaches the agent the policy model — that `pending_approval` is normal (not an
+error), that a read-only key can't send, and that approval is human-only. Install
+it by copying the folder into your skills directory:
+```bash
+cp -r integrations/claude-skill/whatsapp-gateway ~/.claude/skills/
+```
+
+**Other agents / plain HTTP.** Point them at the REST API table below with an
+`Authorization: Bearer wagw_...` key. (The interactive `/docs` is disabled in
+public mode, so the table here is the reference.)
+
+Give each agent its own key scoped to a **role** (`read-only` by default). The
+gateway enforces the rest.
+
 ### 4. Approve drafts
 
 When an agent messages someone outside its allowlist, the send returns
