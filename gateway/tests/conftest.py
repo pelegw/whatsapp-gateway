@@ -122,6 +122,7 @@ def fake_telegram(env, monkeypatch):
         out, rec["_updates"] = rec["_updates"], []
         return out
 
+    monkeypatch.setattr("app.notify.telegram._api", lambda *a, **k: {})   # no network (deleteWebhook etc.)
     monkeypatch.setattr("app.notify.telegram._api_send_message", send_message)
     monkeypatch.setattr("app.notify.telegram._answer_callback",
                         lambda cb_id, text="": rec["answered"].append({"cb": cb_id, "text": text}))
@@ -131,6 +132,21 @@ def fake_telegram(env, monkeypatch):
     monkeypatch.setattr("app.notify.telegram._get_me", lambda: "wagw_test_bot")
     rec["inject"] = lambda u: rec["_updates"].append(u)
     return rec
+
+
+@pytest.fixture(autouse=True)
+def _reset_telegram_globals():
+    """Telegram module globals (link code, loop flag, cached username) outlive a
+    test; reset them so state can't leak between tests."""
+    yield
+    try:
+        from app.notify import telegram as tg
+        tg._link_code = None
+        tg._link_expires = 0.0
+        tg._loop_running = False
+        tg._bot_username = None
+    except Exception:
+        pass
 
 
 @pytest.fixture()

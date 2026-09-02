@@ -153,8 +153,10 @@ Approve or reject from your phone instead of the console. Create a bot with
 
 1. Put the token in `.env` as `TELEGRAM_BOT_TOKEN` and redeploy once (the token is
    the *only* Telegram secret; it never leaves env).
-2. In `/admin` → **Telegram approvals**, click **Link my chat**, send any message
-   to your bot, and it links automatically (no manual chat id). Then flip **Enable**.
+2. In `/admin` → **Telegram approvals**, click **Link my chat** — it shows a
+   one-time code; from your **private** Telegram chat send `/start <code>` to your
+   bot within 5 minutes. That links the chat *and* binds your Telegram user (only
+   you can approve, even if the chat were a group). Then flip **Enable**.
 
 Now every pending draft — and every privilege request (below) — arrives as a
 Telegram card with **Approve / Reject** buttons. Tapping is equivalent to the web

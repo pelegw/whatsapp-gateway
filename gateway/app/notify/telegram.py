@@ -14,6 +14,8 @@ offloads blocking calls with anyio.to_thread (same idiom as mcp_server._run).
 import asyncio
 import contextlib
 import html
+import secrets
+import time
 
 import anyio.to_thread
 import httpx
@@ -23,9 +25,11 @@ from ..config import get_settings
 from ..policy import PolicyError
 
 # ---- in-process state (single uvicorn worker → one instance) ---------------
-_link_pending = False      # set by start_linking(); next inbound message links the chat
+_link_code: str | None = None   # one-time code the operator must echo to link
+_link_expires: float = 0.0      # link window deadline (monotonic-ish wall clock)
 _loop_running = False
 _bot_username: str | None = None
+_LINK_TTL = 300                 # seconds a linking code stays valid
 
 
 class TelegramError(Exception):
@@ -50,16 +54,19 @@ def _enabled() -> bool:
 
 # ---- low-level HTTP (these four are what tests monkeypatch) -----------------
 
-def _client() -> httpx.Client:
+def _client(http_timeout: float) -> httpx.Client:
     return httpx.Client(base_url=f"https://api.telegram.org/bot{_token()}",
-                        timeout=get_settings().telegram_poll_timeout + 10.0)
+                        timeout=http_timeout)
 
 
-def _api(method: str, **json) -> dict:
+def _api(method: str, _http_timeout: float = 15.0, **json) -> dict:
+    # _http_timeout bounds the HTTP call itself: short for sends/notifications
+    # (so a Telegram brown-out can't tie up the agent's request for ~35s), long
+    # only for the getUpdates long-poll.
     if not _token():
         raise TelegramError(503, "no Telegram bot token configured")
     try:
-        with _client() as c:
+        with _client(_http_timeout) as c:
             resp = c.post(f"/{method}", json=json)
     except (httpx.ConnectError, httpx.ConnectTimeout) as e:
         raise TelegramError(503, f"telegram unreachable: {e}") from e
@@ -91,8 +98,8 @@ def _edit_message(message_id: int, text: str) -> None:
 
 
 def _get_updates(offset: int, timeout: int) -> list:
-    return _api("getUpdates", offset=offset, timeout=timeout,
-                allowed_updates=["message", "callback_query"])
+    return _api("getUpdates", _http_timeout=timeout + 10.0, offset=offset,
+                timeout=timeout, allowed_updates=["message", "callback_query"])
 
 
 def _get_me() -> str | None:
@@ -128,14 +135,17 @@ def _draft_text(d: dict) -> str:
 
 
 def _describe_grant(g: dict) -> str:
-    hrs = None
-    if g.get("expires_at"):
-        # approximate hours remaining from creation is not stored; show target/window
-        hrs = "with a time limit"
+    # Show the real breadth + duration so the human approves knowingly.
+    exp = g.get("expires_at")
+    window = ""
+    if exp:
+        hrs = max(1, round((exp - g.get("created_at", exp)) / 3600))
+        window = f" for {hrs}h"
     if g["kind"] == "send_recipient":
-        base = f"always send to <code>{_esc(g['to_jid'])}</code>"
-        return base + (" (time-limited)" if g.get("expires_at") else "")
-    return "send to anyone (time-limited)"
+        if exp:
+            return f"send to <code>{_esc(g['to_jid'])}</code>{window}"
+        return f"<b>always</b> send to <code>{_esc(g['to_jid'])}</code>"
+    return f"send to <b>ANYONE</b>{window}"
 
 
 def _grant_text(g: dict) -> str:
@@ -163,32 +173,59 @@ def notify_grant_request(grant: dict) -> None:
 
 # ---- update handling -------------------------------------------------------
 
+def _try_link(msg: dict) -> None:
+    """Link the chat only if a valid, unexpired code is echoed FROM A PRIVATE
+    CHAT. This binds linking to the admin who started it (they got the code over
+    an admin-authenticated channel) — a stranger messaging the bot can't hijack
+    the channel, and a group chat can't be linked."""
+    global _link_code
+    if not _link_code or time.time() > _link_expires:
+        return
+    if msg.get("chat", {}).get("type") != "private":
+        return
+    if _link_code not in (msg.get("text") or ""):
+        return
+    chat_id = str(msg["chat"]["id"])
+    user_id = str(msg.get("from", {}).get("id", ""))
+    db.set_config("telegram_chat_id", chat_id)
+    db.set_config("telegram_user_id", user_id)   # only this user may approve
+    _link_code = None
+    audit.audit("admin", "telegram.linked", detail={"chat_id": chat_id, "user_id": user_id})
+    with contextlib.suppress(TelegramError):
+        _api_send_message("✅ This chat is now linked for WA_GW approvals.")
+
+
 def _handle_update(u: dict) -> None:
     """Dispatch one Telegram update. Sync (offloaded to a thread by the loop)."""
-    global _link_pending
-
-    # (b) plain message — only used to link the chat.
     msg = u.get("message")
-    if msg and _link_pending:
-        db.set_config("telegram_chat_id", str(msg["chat"]["id"]))
-        _link_pending = False
-        audit.audit("admin", "telegram.linked", detail={"chat_id": msg["chat"]["id"]})
-        with contextlib.suppress(TelegramError):
-            _api_send_message("✅ This chat is now linked for WA_GW approvals.")
+    if msg:
+        _try_link(msg)
         return
 
-    # (a) inline button tap.
     cq = u.get("callback_query")
     if not cq:
         return
     cb_id = cq["id"]
+
+    # Disabling the channel is a real kill switch — no taps are honored while off.
+    if not _enabled():
+        _answer_callback(cb_id, "approvals are disabled")
+        return
+
     chat_id = cq.get("message", {}).get("chat", {}).get("id")
     message_id = cq.get("message", {}).get("message_id")
+    from_id = str(cq.get("from", {}).get("id", ""))
     data = cq.get("data", "")
 
-    if str(chat_id) != _chat_id() or not _chat_id():
+    # Authorize by BOTH the linked chat AND the linked operator user id (so a
+    # linked group can't let other members approve, and a hijacked chat can't).
+    linked_user = db.get_config("telegram_user_id", "") or ""
+    chat_ok = bool(_chat_id()) and str(chat_id) == _chat_id()
+    user_ok = (not linked_user) or from_id == linked_user
+    if not (chat_ok and user_ok):
         _answer_callback(cb_id, "not authorized")
-        audit.audit("admin", "telegram.rejected_chat", detail={"chat_id": chat_id}, result="denied")
+        audit.audit("admin", "telegram.rejected_chat",
+                    detail={"chat_id": chat_id, "from_id": from_id}, result="denied")
         return
     try:
         t, action, item_id = data.split(":", 2)
@@ -220,7 +257,9 @@ async def poll_loop() -> None:
     survives transient errors with backoff; cancels cleanly on shutdown."""
     global _loop_running
     _loop_running = True
-    offset, backoff = 0, 1
+    # Resume from the persisted offset so a restart doesn't replay buffered taps.
+    offset = int(db.get_config("telegram_offset", "0") or "0")
+    backoff = 1
     with contextlib.suppress(Exception):
         await anyio.to_thread.run_sync(lambda: _api("deleteWebhook"))  # else getUpdates 409s
     try:
@@ -232,6 +271,8 @@ async def poll_loop() -> None:
                 for u in updates:
                     offset = u["update_id"] + 1
                     await anyio.to_thread.run_sync(_handle_update, u)
+                if updates:
+                    await anyio.to_thread.run_sync(db.set_config, "telegram_offset", str(offset))
             except asyncio.CancelledError:
                 raise
             except Exception as e:
@@ -257,14 +298,15 @@ def status() -> dict:
 
 
 def start_linking() -> dict:
-    global _link_pending
+    global _link_code, _link_expires
     if not _token():
         raise PolicyError(400, "set TELEGRAM_BOT_TOKEN and redeploy first")
-    _link_pending = True
+    _link_code = secrets.token_hex(3)          # one-time 6-char code
+    _link_expires = time.time() + _LINK_TTL
     username = _get_me()
-    return {"linking": True, "bot_username": username,
-            "instructions": (f"Open Telegram, send any message to @{username}, "
-                             "then refresh — your chat will link automatically.")}
+    return {"linking": True, "bot_username": username, "code": _link_code,
+            "instructions": (f"Within 5 minutes, from your PRIVATE Telegram chat send "
+                             f"this to @{username}:\n/start {_link_code}")}
 
 
 def set_enabled(enabled: bool) -> dict:
@@ -282,6 +324,7 @@ def send_test() -> dict:
 
 def unlink() -> dict:
     db.set_config("telegram_chat_id", "")
+    db.set_config("telegram_user_id", "")
     db.set_config("telegram_enabled", "0")
     audit.audit("admin", "telegram.unlinked")
     return status()

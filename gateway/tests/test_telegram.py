@@ -1,6 +1,7 @@
 """Telegram live-approval channel: notifications, callback dispatch, linking."""
 
 import asyncio
+import contextlib
 
 from app import db, grants
 from app.notify import telegram as tg
@@ -104,29 +105,36 @@ def test_claim_conflict_no_double_send(client, make_key, fake_sidecar, fake_tele
 
 # ------------------------------------------------------------ poll loop + linking
 
-def test_poll_loop_consumes_a_batch(client, make_key, fake_sidecar, fake_telegram):
+def test_poll_loop_consumes_a_batch(client, make_key, fake_sidecar, fake_telegram, monkeypatch):
     key = make_key(name="planner", role="read-draft")
     draft_id = client.post("/v1/send", json={"to": BOB, "text": "loop"},
                            headers=bearer(key)).json()["draft_id"]
-    fake_telegram["inject"](_cb(7, f"d:a:{draft_id}"))
+    # First poll returns the tap batch; the next stops the loop cleanly (so no
+    # worker thread lingers into the following test).
+    calls = {"n": 0}
+    def get_updates(offset, timeout):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return [_cb(7, f"d:a:{draft_id}")]
+        raise asyncio.CancelledError()
+    monkeypatch.setattr("app.notify.telegram._get_updates", get_updates)
 
-    async def run_once():
-        task = asyncio.create_task(tg.poll_loop())
-        for _ in range(50):
-            await asyncio.sleep(0.01)
-            if fake_sidecar["send"]:
-                break
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
+    async def run():
+        with contextlib.suppress(asyncio.CancelledError):
+            await tg.poll_loop()
 
-    asyncio.run(run_once())
+    asyncio.run(run())
     assert fake_sidecar["send"] == [(BOB, "loop")]
 
 
-def test_status_and_linking(env, monkeypatch):
+def _msg(uid, chat_id, text="", chat_type="private", user_id=333):
+    m = {"message_id": uid, "chat": {"id": chat_id, "type": chat_type}, "from": {"id": user_id}}
+    if text:
+        m["text"] = text
+    return {"update_id": uid, "message": m}
+
+
+def test_secure_linking_requires_code_private_chat(env, monkeypatch):
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token")
     from app.config import get_settings
     get_settings.cache_clear()
@@ -136,13 +144,64 @@ def test_status_and_linking(env, monkeypatch):
     st = tg.status()
     assert st["token_present"] and not st["chat_linked"] and st["enabled"] is False
 
-    tg.start_linking()
-    # an inbound message from the user links this chat
-    tg._handle_update({"update_id": 1, "message": {"message_id": 9, "chat": {"id": 7777}}})
+    code = tg.start_linking()["code"]
+    # a stranger with NO code does not link
+    tg._handle_update(_msg(1, 9999))
+    assert not tg.status()["chat_linked"]
+    # the code from a GROUP chat does not link
+    tg._handle_update(_msg(2, 7000, text=f"/start {code}", chat_type="group"))
+    assert not tg.status()["chat_linked"]
+    # correct code from a private chat links and binds the operator user id
+    tg._handle_update(_msg(3, 7777, text=f"/start {code}", user_id=333))
     assert db.get_config("telegram_chat_id") == "7777"
-    assert tg.status()["chat_linked"] is True
+    assert db.get_config("telegram_user_id") == "333"
 
     tg.set_enabled(True)
-    assert db.get_config("telegram_enabled") == "1"
     tg.unlink()
-    assert not tg.status()["chat_linked"] and tg.status()["enabled"] is False
+    assert not tg.status()["chat_linked"] and db.get_config("telegram_user_id") == ""
+
+
+def test_expired_link_code_does_not_link(env, monkeypatch):
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token")
+    from app.config import get_settings
+    get_settings.cache_clear()
+    monkeypatch.setattr("app.notify.telegram._get_me", lambda: "wagw_bot")
+    code = tg.start_linking()["code"]
+    monkeypatch.setattr("app.notify.telegram._link_expires", 0.0)   # already expired
+    tg._handle_update(_msg(1, 7777, text=f"/start {code}"))
+    assert not tg.status()["chat_linked"]
+
+
+def test_callback_rejected_when_disabled(client, make_key, fake_sidecar, fake_telegram):
+    key = make_key(name="planner", role="read-draft")
+    draft_id = client.post("/v1/send", json={"to": BOB, "text": "x"},
+                           headers=bearer(key)).json()["draft_id"]
+    db.set_config("telegram_enabled", "0")                          # kill switch
+    tg._handle_update(_cb(1, f"d:a:{draft_id}"))
+    assert fake_sidecar["send"] == []
+    assert client.get(f"/v1/drafts/{draft_id}", headers=bearer(key)).json()["status"] == "pending"
+
+
+def test_callback_rejected_for_wrong_user(client, make_key, fake_sidecar, fake_telegram):
+    db.set_config("telegram_user_id", "333")                        # only user 333 may approve
+    key = make_key(name="planner", role="read-draft")
+    draft_id = client.post("/v1/send", json={"to": BOB, "text": "x"},
+                           headers=bearer(key)).json()["draft_id"]
+    cb = _cb(1, f"d:a:{draft_id}")
+    cb["callback_query"]["from"] = {"id": 999}                       # a different user taps
+    tg._handle_update(cb)
+    assert fake_sidecar["send"] == []
+    assert client.get(f"/v1/drafts/{draft_id}", headers=bearer(key)).json()["status"] == "pending"
+
+
+def test_grant_card_shows_duration_and_breadth(env):
+    now = 1700000000
+    recip = {"kind": "send_recipient", "to_jid": BOB, "created_at": now,
+             "expires_at": now + 2 * 3600, "reason": "r", "key_name": "k"}
+    assert "for 2h" in tg._grant_text(recip) and BOB in tg._grant_text(recip)
+    window = {"kind": "send_window", "to_jid": None, "created_at": now,
+              "expires_at": now + 5 * 3600, "reason": "", "key_name": "k"}
+    assert "ANYONE" in tg._grant_text(window) and "for 5h" in tg._grant_text(window)
+    forever = {"kind": "send_recipient", "to_jid": BOB, "created_at": now,
+               "expires_at": None, "reason": "", "key_name": "k"}
+    assert "always" in tg._grant_text(forever).lower()

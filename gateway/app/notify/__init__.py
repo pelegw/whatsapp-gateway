@@ -30,7 +30,15 @@ def _providers() -> list:
 
 
 def _fan_out(method: str, item: dict) -> None:
-    for p in _providers():
+    # Fully non-fatal: even provider SELECTION (which reads config/db) is guarded,
+    # so a locked DB or misconfig can never break the agent's request.
+    try:
+        providers = _providers()
+    except Exception as e:
+        audit.audit("system", "notify.failed", resource=str(item.get("id", "")),
+                    detail={"phase": "select", "error": str(e)}, result="error")
+        return
+    for p in providers:
         try:
             getattr(p, method)(item)
         except Exception as e:                      # a channel outage never breaks the caller
