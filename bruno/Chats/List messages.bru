@@ -1,0 +1,29 @@
+meta {
+  name: List messages
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/v1/chats/{{chatJid}}/messages?limit=30
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{agentKey}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+script:post-response {
+  if (res.getStatus() === 200 && res.getBody().length) {
+    bru.setEnvVar('messageId', res.getBody()[0].id);
+  }
+}
+
+docs {
+  Newest first. Page back with before={ts}&before_id={id}; forward with after=&after_id=.
+}

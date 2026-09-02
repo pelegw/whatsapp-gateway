@@ -1,0 +1,192 @@
+"""The service layer: every capability of the gateway, behind auth + policy.
+
+Both the REST routers and the MCP tools are thin wrappers over these
+functions, so policy and audit behavior can never diverge between the two
+interfaces. All functions take the acting AuthContext first.
+"""
+
+import time
+import uuid
+
+from . import audit, db, policy, sidecar, wastore
+from .auth import (DRAFTS_READ, READ_CHATS, READ_CONTACTS, READ_MEDIA,
+                   READ_MESSAGES, SEND_DIRECT, SEND_DRAFT, AuthContext)
+from .config import get_settings
+from .policy import PolicyError
+
+
+def _clamp(n: int, hi: int) -> int:
+    """Clamp a caller-supplied limit into [1, hi] — SQLite treats LIMIT -1 as
+    'unlimited', so negative input must never reach a query."""
+    return max(1, min(n, hi))
+
+
+def _require(auth: AuthContext, scope: str) -> None:
+    if not auth.has(scope):
+        audit.audit(auth.name, "authz.denied", detail={"scope": scope}, result="denied")
+        raise PolicyError(403, f"this API key lacks the {scope!r} scope")
+
+
+# ---------------------------------------------------------------- reads
+
+def list_chats(auth: AuthContext, query: str = "", limit: int = 50, offset: int = 0) -> list[dict]:
+    _require(auth, READ_CHATS)
+    audit.audit(auth.name, "read.chats", detail={"query": query})
+    return wastore.list_chats(query, _clamp(limit, 200), max(0, offset))
+
+
+def get_chat(auth: AuthContext, jid: str) -> dict:
+    _require(auth, READ_CHATS)
+    audit.audit(auth.name, "read.chat", resource=jid)
+    chat = wastore.get_chat(jid)
+    if chat is None:
+        raise PolicyError(404, f"no chat {jid!r} in the archive")
+    return chat
+
+
+def list_messages(auth: AuthContext, chat_jid: str, limit: int = 50,
+                  before: int | None = None, after: int | None = None,
+                  before_id: str | None = None, after_id: str | None = None) -> list[dict]:
+    _require(auth, READ_MESSAGES)
+    audit.audit(auth.name, "read.messages", resource=chat_jid,
+                detail={"limit": limit, "before": before, "after": after})
+    return wastore.list_messages(chat_jid, _clamp(limit, 200), before, after,
+                                 before_id, after_id)
+
+
+def search_messages(auth: AuthContext, query: str, chat_jid: str | None = None,
+                    limit: int = 20) -> list[dict]:
+    _require(auth, READ_MESSAGES)
+    audit.audit(auth.name, "read.search", detail={"query": query, "chat_jid": chat_jid})
+    return wastore.search_messages(query, chat_jid, _clamp(limit, 100))
+
+
+def list_contacts(auth: AuthContext, query: str = "", limit: int = 50) -> list[dict]:
+    _require(auth, READ_CONTACTS)
+    audit.audit(auth.name, "read.contacts", detail={"query": query})
+    return wastore.list_contacts(query, _clamp(limit, 200))
+
+
+def get_media(auth: AuthContext, chat_jid: str, message_id: str) -> tuple[bytes, str]:
+    _require(auth, READ_MEDIA)
+    audit.audit(auth.name, "read.media", resource=f"{chat_jid}/{message_id}")
+    return sidecar.media(chat_jid, message_id)
+
+
+# ---------------------------------------------------------------- sends
+
+def send_message(auth: AuthContext, to: str, text: str) -> dict:
+    """Policy-routed send by role: read-send delivers immediately, read-draft
+    (or a read-send key messaging off its allowlist) queues a draft, read-only
+    is rejected."""
+    if not text:
+        raise PolicyError(400, "text must not be empty")
+    to_jid = policy.normalize_jid(to)
+    route = policy.route_send(auth, to_jid)
+    if route == "draft":
+        note = ("(auto-routed: recipient not on this key's allowlist)"
+                if auth.role == "read-send" else "(read-draft key: awaiting approval)")
+        draft = create_draft(auth, to_jid, text, note=note)
+        audit.audit(auth.name, "send.routed_to_draft", resource=to_jid,
+                    detail={"draft_id": draft["id"]})
+        return {"status": "pending_approval", "draft_id": draft["id"],
+                "detail": "this message needs human approval before it is sent"}
+
+    # Defense in depth: role routing already decided "direct", but require the
+    # underlying scope too, so a message can never be delivered without
+    # send:direct even if role and scopes ever drifted apart.
+    _require(auth, SEND_DIRECT)
+    policy.enforce_rate_limits(auth, auth.name)
+    try:
+        res = sidecar.send_text(to_jid, text)
+    except sidecar.SidecarError as e:
+        audit.audit(auth.name, "send.failed", resource=to_jid,
+                    detail={"error": str(e)}, result="error")
+        raise
+    audit.audit(auth.name, "send.sent", resource=to_jid,
+                detail={"message_id": res.get("message_id"), "chars": len(text)})
+    return {"status": "sent", **res}
+
+
+def create_draft(auth: AuthContext, to: str, text: str, note: str = "") -> dict:
+    _require(auth, SEND_DRAFT)
+    if not text:
+        raise PolicyError(400, "text must not be empty")
+    to_jid = policy.normalize_jid(to)
+    now = int(time.time())
+    draft = {
+        "id": str(uuid.uuid4()),
+        "key_id": auth.key_id,
+        "to_jid": to_jid,
+        "body": text,
+        "note": note,
+        "status": "pending",
+        "created_at": now,
+        "expires_at": now + get_settings().draft_ttl_hours * 3600,
+    }
+    with db.connect() as conn:
+        conn.execute(
+            """INSERT INTO drafts (id, key_id, to_jid, body, note, status, created_at, expires_at)
+               VALUES (:id, :key_id, :to_jid, :body, :note, :status, :created_at, :expires_at)""",
+            draft,
+        )
+    audit.audit(auth.name, "draft.created", resource=to_jid, detail={"draft_id": draft["id"]})
+    return draft
+
+
+def _sweep_expired() -> None:
+    """Lazy expiry: run before any draft read/decision. Cheap single sweep."""
+    now = int(time.time())
+    with db.connect() as conn:
+        conn.execute(
+            "UPDATE drafts SET status = 'expired', decided_at = ? "
+            "WHERE status = 'pending' AND expires_at < ?",
+            (now, now),
+        )
+        # 'sending' is the approval claim; if the process died mid-send the
+        # claim would dangle forever, so age it out as failed.
+        conn.execute(
+            "UPDATE drafts SET status = 'failed' "
+            "WHERE status = 'sending' AND decided_at < ?",
+            (now - 300,),
+        )
+
+
+def list_my_drafts(auth: AuthContext, limit: int = 50) -> list[dict]:
+    _require(auth, DRAFTS_READ)
+    _sweep_expired()
+    with db.connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM drafts WHERE key_id = ? ORDER BY created_at DESC LIMIT ?",
+            (auth.key_id, _clamp(limit, 200)),
+        ).fetchall()
+    audit.audit(auth.name, "draft.list")
+    return [dict(r) for r in rows]
+
+
+def get_draft(auth: AuthContext, draft_id: str) -> dict:
+    _require(auth, DRAFTS_READ)
+    _sweep_expired()
+    with db.connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM drafts WHERE id = ? AND key_id = ?",
+            (draft_id, auth.key_id),
+        ).fetchone()
+    if row is None:
+        raise PolicyError(404, "no such draft for this key")
+    audit.audit(auth.name, "draft.get", resource=draft_id)
+    return dict(row)
+
+
+def cancel_draft(auth: AuthContext, draft_id: str) -> dict:
+    _require(auth, SEND_DRAFT)
+    with db.connect() as conn:
+        cur = conn.execute(
+            "UPDATE drafts SET status = 'canceled', decided_at = ? "
+            "WHERE id = ? AND key_id = ? AND status = 'pending'",
+            (int(time.time()), draft_id, auth.key_id),
+        )
+        if cur.rowcount == 0:
+            raise PolicyError(404, "no pending draft with that id for this key")
+    audit.audit(auth.name, "draft.canceled", resource=draft_id)
+    return {"id": draft_id, "status": "canceled"}

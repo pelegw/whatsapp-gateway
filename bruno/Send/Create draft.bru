@@ -1,0 +1,35 @@
+meta {
+  name: Create draft
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/v1/drafts
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{agentKey}}
+}
+
+body:json {
+  {
+    "to": "+15551234567",
+    "text": "draft body",
+    "note": "why I wrote this"
+  }
+}
+
+assert {
+  res.status: eq 201
+}
+
+script:post-response {
+  if (res.getBody().id) { bru.setEnvVar('draftId', res.getBody().id); }
+}
+
+docs {
+  Always queues for human approval; captures the new draft id.
+}

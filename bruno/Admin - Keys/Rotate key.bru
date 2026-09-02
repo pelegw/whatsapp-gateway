@@ -1,0 +1,19 @@
+meta {
+  name: Rotate key
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/v1/admin/keys/{{keyId}}/rotate
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{adminToken}}
+}
+
+docs {
+  Issues a new secret; the old one keeps working for the grace window.
+}

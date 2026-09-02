@@ -1,0 +1,19 @@
+meta {
+  name: List pending drafts
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/v1/admin/drafts?status=pending
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{adminToken}}
+}
+
+assert {
+  res.status: eq 200
+}

@@ -1,0 +1,32 @@
+meta {
+  name: 3 Call list_chats
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/mcp
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{agentKey}}
+}
+
+headers {
+  Accept: application/json, text/event-stream
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "jsonrpc": "2.0",
+    "id": 3,
+    "method": "tools/call",
+    "params": {
+      "name": "list_chats",
+      "arguments": { "limit": 5 }
+    }
+  }
+}

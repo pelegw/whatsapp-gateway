@@ -1,0 +1,19 @@
+meta {
+  name: Login QR PNG
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/v1/admin/qr
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{adminToken}}
+}
+
+docs {
+  Returns the login QR as image/png (409 once already linked).
+}

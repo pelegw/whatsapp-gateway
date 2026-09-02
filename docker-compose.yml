@@ -1,0 +1,57 @@
+name: wa-gw
+
+services:
+  # Speaks the WhatsApp multi-device protocol (whatsmeow). Holds the session.
+  # Deliberately "dumb": no policy, no agent-facing API. Never published to the host.
+  sidecar:
+    build: ./sidecar
+    restart: unless-stopped
+    networks: [internal]
+    volumes:
+      - wa_data:/data
+    environment:
+      SIDECAR_TOKEN: ${SIDECAR_TOKEN:?generate with 'openssl rand -hex 32' and put in .env}
+      # Shown in WhatsApp > Linked devices. Takes effect on the next (re-)link.
+      DEVICE_NAME: ${DEVICE_NAME:-WA_GW}
+      TZ: ${TZ:-UTC}
+
+  # The only thing agents ever talk to: REST + MCP, auth, allowlists,
+  # draft/approval queue, rate limits, audit log.
+  gateway:
+    build: ./gateway
+    restart: unless-stopped
+    depends_on: [sidecar]
+    networks: [internal]
+    ports:
+      - "127.0.0.1:${GATEWAY_PORT:-8080}:8080"   # loopback only
+    volumes:
+      - wa_data:/data     # sidecar-owned DBs; gateway opens messages.db read-only (SQLite mode=ro)
+      - gw_data:/gwdata   # gateway-owned DB (keys, drafts, audit)
+    environment:
+      SIDECAR_URL: http://sidecar:8081
+      SIDECAR_TOKEN: ${SIDECAR_TOKEN:?generate with 'openssl rand -hex 32' and put in .env}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?generate with 'openssl rand -hex 32' and put in .env}
+      # Host headers the /mcp endpoint accepts (DNS-rebinding guard). Extend in
+      # .env when serving beyond localhost (e.g. a Tailscale hostname).
+      MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-localhost:*,127.0.0.1:*}
+      # Internet exposure (all optional; empty = disabled, so local runs are
+      # unchanged). See docker-compose.public.yml and the README.
+      ORIGIN_SECRET: ${ORIGIN_SECRET:-}
+      ORIGIN_SECRET_HEADER: ${ORIGIN_SECRET_HEADER:-x-wagw-origin}
+      CF_ACCESS_ENABLED: ${CF_ACCESS_ENABLED:-false}
+      CF_ACCESS_TEAM_DOMAIN: ${CF_ACCESS_TEAM_DOMAIN:-}
+      CF_ACCESS_AUD: ${CF_ACCESS_AUD:-}
+      CF_ACCESS_ALLOWED_EMAILS: ${CF_ACCESS_ALLOWED_EMAILS:-}
+      # Boot fails closed if ORIGIN_SECRET is set without Cloudflare Access;
+      # set this true only if you accept admin-token-only protection.
+      ALLOW_INSECURE_ADMIN: ${ALLOW_INSECURE_ADMIN:-false}
+      TZ: ${TZ:-UTC}
+
+networks:
+  internal: {}
+
+# Named volumes (not bind mounts): SQLite WAL locking is unreliable over
+# Docker Desktop's NTFS file sharing; named volumes live on ext4 inside WSL2.
+volumes:
+  wa_data: {}
+  gw_data: {}

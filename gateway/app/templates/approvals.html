@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WA_GW admin</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f5f6f8; --panel: #ffffff; --panel-2: #fbfcfd; --ink: #1b1f24;
+    --muted: #667085; --line: #e6e8ec; --accent: #2f6feb; --accent-ink: #fff;
+    --green: #1f9d55; --amber: #b7791f; --red: #c0392b; --gray: #7a828c;
+    --shadow: 0 1px 3px rgba(16,24,40,.08), 0 1px 2px rgba(16,24,40,.06);
+    --radius: 12px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1013; --panel: #17191e; --panel-2: #1c1f25; --ink: #e8eaed;
+      --muted: #9aa2ad; --line: #2a2e35; --accent: #4b83f0; --green: #35b06a;
+      --amber: #d99a3a; --red: #e05c4c; --gray: #8b929c;
+      --shadow: 0 1px 3px rgba(0,0,0,.4);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    position: sticky; top: 0; z-index: 5; background: var(--panel);
+    border-bottom: 1px solid var(--line); padding: .75rem 1.25rem;
+    display: flex; align-items: center; gap: .9rem; box-shadow: var(--shadow);
+  }
+  header h1 { font-size: 1.05rem; margin: 0; letter-spacing: .2px; }
+  header .brand-dot { color: var(--green); }
+  header .spacer { flex: 1; }
+  .pill {
+    display: inline-flex; align-items: center; gap: .45rem; font-size: .82rem;
+    padding: .3rem .7rem; border-radius: 999px; border: 1px solid var(--line);
+    background: var(--panel-2); color: var(--muted); white-space: nowrap;
+  }
+  .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--gray); }
+  .pill.ok .dot { background: var(--green); }
+  .pill.warn .dot { background: var(--amber); }
+  .pill.off .dot { background: var(--red); }
+  main { max-width: 900px; margin: 0 auto; padding: 1.25rem; }
+  section { margin-bottom: 1.75rem; }
+  .sec-head { display: flex; align-items: baseline; gap: .6rem; margin: 0 0 .75rem; }
+  .sec-head h2 { font-size: 1rem; margin: 0; }
+  .sec-head .count { color: var(--muted); font-size: .85rem; }
+  .sec-head .spacer { flex: 1; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    box-shadow: var(--shadow); padding: 1rem 1.1rem; margin-bottom: .8rem;
+  }
+  .qr-card { display: flex; gap: 1.1rem; align-items: center; flex-wrap: wrap; }
+  .qr-card img { width: 200px; height: 200px; border-radius: 8px; background: #fff; padding: 6px; }
+  .qr-card .hint { color: var(--muted); font-size: .9rem; max-width: 26rem; }
+  .draft .meta { font-size: .82rem; color: var(--muted); display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+  .draft .to { color: var(--ink); font-weight: 600; }
+  .draft .body { white-space: pre-wrap; margin: .55rem 0; }
+  .draft .note { font-size: .85rem; font-style: italic; color: var(--muted); }
+  .draft .actions { margin-top: .6rem; display: flex; gap: .5rem; }
+  .empty { color: var(--muted); text-align: center; padding: 1.5rem 0; }
+  button {
+    font: inherit; font-size: .88rem; padding: .45rem .9rem; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--panel-2); color: var(--ink);
+    cursor: pointer; transition: filter .12s;
+  }
+  button:hover { filter: brightness(.97); }
+  button:disabled { opacity: .5; cursor: default; }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+  button.green { background: var(--green); color: #fff; border-color: transparent; }
+  button.red { background: var(--red); color: #fff; border-color: transparent; }
+  button.ghost { background: transparent; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+  th, td { text-align: left; padding: .55rem .6rem; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  th { color: var(--muted); font-weight: 600; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; }
+  td .sub { color: var(--muted); font-size: .8rem; }
+  .badge { display: inline-block; font-size: .74rem; font-weight: 600; padding: .18rem .5rem; border-radius: 999px; border: 1px solid transparent; }
+  .badge.read-only { background: color-mix(in srgb, var(--gray) 16%, transparent); color: var(--gray); }
+  .badge.read-draft { background: color-mix(in srgb, var(--amber) 16%, transparent); color: var(--amber); }
+  .badge.read-send { background: color-mix(in srgb, var(--green) 16%, transparent); color: var(--green); }
+  .badge.off { background: color-mix(in srgb, var(--red) 16%, transparent); color: var(--red); }
+  form.newkey { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .7rem; align-items: end; }
+  form.newkey label { display: flex; flex-direction: column; gap: .28rem; font-size: .8rem; color: var(--muted); }
+  form.newkey input, form.newkey select {
+    font: inherit; padding: .45rem .55rem; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--panel-2); color: var(--ink);
+  }
+  form.newkey .rolehelp { grid-column: 1 / -1; color: var(--muted); font-size: .82rem; margin-top: -.2rem; }
+  .keybanner {
+    background: color-mix(in srgb, var(--green) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--green) 40%, transparent);
+    border-radius: 8px; padding: .7rem .9rem; margin-bottom: .8rem; font-size: .9rem;
+  }
+  .keybanner code { background: var(--panel); padding: .12rem .4rem; border-radius: 5px; user-select: all; word-break: break-all; }
+  #err { color: var(--red); white-space: pre-wrap; font-size: .88rem; margin: .5rem 0; }
+  .row-actions { display: flex; gap: .4rem; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="brand-dot">●</span> WA_GW admin</h1>
+  <div class="spacer"></div>
+  <span class="pill" id="statusPill"><span class="dot"></span><span id="statusText">connecting…</span></span>
+  <button class="ghost" id="refreshBtn" title="Refresh">↻</button>
+  <button class="ghost" id="logoutBtn" title="Forget the admin token on this device">Log out</button>
+</header>
+
+<main>
+  <div id="err"></div>
+
+  <section id="qrSection" hidden>
+    <div class="sec-head"><h2>Link WhatsApp</h2></div>
+    <div class="card qr-card">
+      <img id="qr" alt="WhatsApp login QR">
+      <div class="hint">
+        Open WhatsApp on your phone → <b>Settings → Linked devices → Link a device</b>,
+        then scan this code. You only do this once — the session persists across restarts.
+      </div>
+    </div>
+  </section>
+
+  <section id="approvalsSection">
+    <div class="sec-head">
+      <h2>Pending approvals</h2><span class="count" id="draftCount"></span>
+    </div>
+    <div id="draftList"></div>
+  </section>
+
+  <section id="keysSection">
+    <div class="sec-head">
+      <h2>API keys</h2><span class="count" id="keyCount"></span>
+      <div class="spacer"></div>
+      <button class="primary" id="newKeyToggle">+ New key</button>
+    </div>
+
+    <div class="card" id="newKeyCard" hidden>
+      <div class="keybanner" id="newKeyBanner" hidden></div>
+      <form class="newkey" id="newKeyForm">
+        <label>Name<input name="name" required placeholder="e.g. claude" maxlength="64"></label>
+        <label>Role
+          <select name="role">
+            <option value="read-only">read-only (default)</option>
+            <option value="read-draft">read-draft</option>
+            <option value="read-send">read-send</option>
+          </select>
+        </label>
+        <label>Auto-send to<input name="allowlist" placeholder="optional, comma-separated"></label>
+        <label>Expires (days)<input name="expires" type="number" min="1" max="3650" placeholder="never"></label>
+        <button class="primary" type="submit">Create</button>
+        <div class="rolehelp" id="roleHelp"></div>
+      </form>
+    </div>
+
+    <div class="card table-wrap">
+      <table>
+        <thead><tr>
+          <th>Name</th><th>Role</th><th>Auto-send</th><th>Last used</th><th>Expires</th><th></th>
+        </tr></thead>
+        <tbody id="keyRows"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script>
+// ---- auth: ask once, keep in localStorage, re-prompt on 401 -----------------
+let token = localStorage.getItem("wagw_admin_token");
+async function api(path, opts = {}) {
+  if (!token) {
+    token = prompt("Admin token:");
+    if (!token) throw new Error("no admin token entered");
+    localStorage.setItem("wagw_admin_token", token);
+  }
+  const res = await fetch(path, {
+    ...opts,
+    headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json", ...(opts.headers || {}) },
+  });
+  if (res.status === 401 || res.status === 403) {
+    localStorage.removeItem("wagw_admin_token"); token = null;
+    throw new Error("unauthorized — reload and re-enter the admin token");
+  }
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}));
+    // Our handlers use {error}; FastAPI validation uses {detail}.
+    throw new Error(b.error || (typeof b.detail === "string" ? b.detail : res.statusText));
+  }
+  return res.status === 204 ? null : res.json();
+}
+const $ = (id) => document.getElementById(id);
+const showErr = (e) => { $("err").textContent = e ? String(e.message || e) : ""; };
+const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; };
+const ago = (ts) => { const m = Math.round(Date.now() / 1000 - ts) / 60; return m < 1 ? "just now" : m < 60 ? Math.round(m) + " min ago" : Math.round(m / 60) + " h ago"; };
+const fmtDate = (ts) => ts ? new Date(ts * 1000).toLocaleDateString() : "—";
+
+// ---- status + QR ------------------------------------------------------------
+async function refreshStatus() {
+  const st = await api("/v1/admin/status");
+  const pill = $("statusPill"), txt = $("statusText");
+  pill.className = "pill";
+  if (st.sidecar !== "up") { pill.classList.add("off"); txt.textContent = "sidecar down"; }
+  else if (st.logged_in) { pill.classList.add("ok"); txt.textContent = "linked · " + (st.push_name || st.jid || "connected"); }
+  else { pill.classList.add("warn"); txt.textContent = "not linked — scan QR"; }
+  const needsQr = st.sidecar === "up" && !st.logged_in && st.waiting_for_qr;
+  $("qrSection").hidden = !needsQr;
+  if (needsQr) await showQR();
+}
+async function showQR() {
+  const res = await fetch("/v1/admin/qr", { headers: { "Authorization": "Bearer " + token } });
+  if (!res.ok) { $("qrSection").hidden = true; return; }
+  const img = $("qr"); const old = img.src;
+  img.src = URL.createObjectURL(await res.blob());
+  if (old) URL.revokeObjectURL(old);
+}
+
+// ---- approvals --------------------------------------------------------------
+async function refreshDrafts() {
+  const drafts = await api("/v1/admin/drafts?status=pending");
+  $("draftCount").textContent = drafts.length ? `${drafts.length} waiting` : "";
+  const list = $("draftList"); list.replaceChildren();
+  if (!drafts.length) { list.append(el("div", "empty", "Nothing waiting for approval.")); return; }
+  for (const d of drafts) {
+    const card = el("div", "card draft");
+    const meta = el("div", "meta");
+    meta.append(el("span", null, d.key_name), el("span", null, "→"), el("span", "to", d.to_jid), el("span", null, "· " + ago(d.created_at)));
+    card.append(meta, el("div", "body", d.body));
+    if (d.note) card.append(el("div", "note", d.note));
+    const actions = el("div", "actions");
+    const approve = el("button", "green", "Approve & send");
+    const reject = el("button", "red", "Reject");
+    approve.onclick = () => decide(d.id, "approve", approve, reject);
+    reject.onclick = () => decide(d.id, "reject", approve, reject);
+    actions.append(approve, reject); card.append(actions); list.append(card);
+  }
+}
+async function decide(id, action, ...btns) {
+  btns.forEach(b => b.disabled = true); showErr();
+  try { await api(`/v1/admin/drafts/${id}/${action}`, { method: "POST" }); }
+  catch (e) { showErr(e); btns.forEach(b => b.disabled = false); }
+  refreshDrafts();
+}
+
+// ---- keys -------------------------------------------------------------------
+const ROLE_HELP = {
+  "read-only": "Reads your messages/chats/contacts. Cannot send or draft.",
+  "read-draft": "Reads, and composes drafts you must approve & send.",
+  "read-send": "Reads, and sends on your behalf (auto-approved). Add an auto-send list to limit who it can message without approval.",
+};
+async function refreshKeys() {
+  const keys = await api("/v1/admin/keys");
+  $("keyCount").textContent = keys.length ? `${keys.length} total` : "";
+  const rows = $("keyRows"); rows.replaceChildren();
+  for (const k of keys) {
+    const tr = el("tr");
+    const nameTd = el("td"); nameTd.append(el("div", null, k.name));
+    if (k.rotating) nameTd.append(el("div", "sub", "rotating — old key still valid"));
+    tr.append(nameTd);
+    const roleTd = el("td");
+    roleTd.append(el("span", "badge " + (k.disabled ? "off" : k.role), k.disabled ? "disabled" : k.role));
+    tr.append(roleTd);
+    tr.append(el("td", null, k.send_allowlist && k.send_allowlist.length ? k.send_allowlist.join(", ") : (k.role === "read-send" ? "anyone" : "—")));
+    const usedTd = el("td");
+    usedTd.append(el("div", null, k.last_used_at ? ago(k.last_used_at) : "never"));
+    if (k.last_used_ip) usedTd.append(el("div", "sub", k.last_used_ip));
+    tr.append(usedTd);
+    tr.append(el("td", null, fmtDate(k.expires_at)));
+    const actTd = el("td"); const wrap = el("div", "row-actions");
+    const rotate = el("button", "ghost", "Rotate");
+    rotate.onclick = () => rotateKey(k.id, rotate);
+    const toggle = el("button", k.disabled ? "" : "ghost", k.disabled ? "Enable" : "Disable");
+    toggle.onclick = () => setDisabled(k.id, !k.disabled, toggle);
+    wrap.append(rotate, toggle); actTd.append(wrap); tr.append(actTd);
+    rows.append(tr);
+  }
+}
+async function rotateKey(id, btn) {
+  btn.disabled = true; showErr();
+  try {
+    const r = await api(`/v1/admin/keys/${id}/rotate`, { method: "POST" });
+    banner(`Rotated. New secret (old works for the grace window): `, r.key);
+  } catch (e) { showErr(e); }
+  btn.disabled = false; refreshKeys();
+}
+async function setDisabled(id, disabled, btn) {
+  btn.disabled = true; showErr();
+  try { await api(`/v1/admin/keys/${id}`, { method: "PATCH", body: JSON.stringify({ disabled }) }); }
+  catch (e) { showErr(e); }
+  refreshKeys();
+}
+function banner(msg, key) {
+  const b = $("newKeyBanner"); b.hidden = false; b.replaceChildren();
+  b.append(document.createTextNode(msg));
+  const code = el("code", null, key); b.append(code);
+  b.append(el("div", "sub", "Copy it now — it is never shown again."));
+  $("newKeyCard").hidden = false;
+}
+$("newKeyToggle").onclick = () => { const c = $("newKeyCard"); c.hidden = !c.hidden; };
+const roleSel = document.querySelector('select[name=role]');
+const setRoleHelp = () => { $("roleHelp").textContent = ROLE_HELP[roleSel.value]; };
+roleSel.onchange = setRoleHelp; setRoleHelp();
+$("newKeyForm").onsubmit = async (e) => {
+  e.preventDefault(); showErr();
+  const f = e.target;
+  const body = { name: f.name.value.trim(), role: f.role.value };
+  const allow = f.allowlist.value.split(",").map(s => s.trim()).filter(Boolean);
+  if (allow.length) body.allowlist = allow;
+  if (f.expires.value) body.expires_in_days = Number(f.expires.value);
+  try {
+    const r = await api("/v1/admin/keys", { method: "POST", body: JSON.stringify(body) });
+    banner(`Created ${r.role} key "${body.name}": `, r.key);
+    f.reset(); setRoleHelp();
+  } catch (e) { showErr(e); }
+  refreshKeys();
+};
+
+// ---- boot + poll ------------------------------------------------------------
+async function refreshAll() {
+  showErr();
+  try { await Promise.all([refreshStatus(), refreshDrafts(), refreshKeys()]); }
+  catch (e) { showErr(e); }
+}
+$("refreshBtn").onclick = refreshAll;
+$("logoutBtn").onclick = () => {
+  // Forget the token on this device; the reload re-prompts for it.
+  localStorage.removeItem("wagw_admin_token");
+  token = null;
+  location.reload();
+};
+refreshAll();
+setInterval(() => { refreshStatus().catch(() => {}); refreshDrafts().catch(() => {}); }, 15000);
+</script>
+</body>
+</html>

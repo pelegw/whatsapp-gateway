@@ -1,0 +1,31 @@
+headers {
+  X-WAGW-Origin: {{originSecret}}
+  ~CF-Access-Client-Id: {{cfClientId}}
+  ~CF-Access-Client-Secret: {{cfClientSecret}}
+}
+
+auth {
+  mode: none
+}
+
+docs {
+  # WA_GW API — Bruno collection
+
+  Set the **Local** environment (top-right), then fill `adminToken` (from your
+  `.env`). Create an agent key with **Admin > Keys > Create key** — its
+  post-response script stores the plaintext into `agentKey` automatically.
+
+  Auth model (what you are testing):
+  - Agent routes (`/v1/chats`, `/v1/messages`, `/v1/send`, `/v1/drafts`, ...)
+    require `Authorization: Bearer {{agentKey}}` — enforced per-endpoint by the
+    `current_auth` dependency.
+  - Admin routes (`/v1/admin/*`) require `Authorization: Bearer {{adminToken}}`
+    — enforced by the router-level `require_admin` dependency (plus a Cloudflare
+    Access JWT when `CF_ACCESS_ENABLED`).
+  - `/mcp` requires the agent key, checked by `MCPAuthMiddleware`.
+  - `/v1/health` and the `/admin/approvals` HTML shell are intentionally open.
+
+  The **Auth checks** folder demonstrates rejection (401/403). When testing the
+  public origin, set `originSecret` (and, for admin through Access, enable the
+  two `CF-Access-*` collection headers).
+}

@@ -1,0 +1,25 @@
+meta {
+  name: Disable key
+  type: http
+  seq: 5
+}
+
+patch {
+  url: {{baseUrl}}/v1/admin/keys/{{keyId}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{adminToken}}
+}
+
+body:json {
+  {
+    "disabled": true
+  }
+}
+
+docs {
+  Revokes both current and previous secrets immediately.
+}

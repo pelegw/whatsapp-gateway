@@ -1,0 +1,29 @@
+meta {
+  name: 2 Tools list
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/mcp
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{agentKey}}
+}
+
+headers {
+  Accept: application/json, text/event-stream
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "method": "tools/list",
+    "params": {}
+  }
+}

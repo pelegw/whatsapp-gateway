@@ -1,0 +1,33 @@
+meta {
+  name: MCP without key is 401
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/mcp
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json, text/event-stream
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/list",
+    "params": {}
+  }
+}
+
+assert {
+  res.status: eq 401
+}
+
+docs {
+  The MCP transport rejects calls without the agent Bearer key.
+}

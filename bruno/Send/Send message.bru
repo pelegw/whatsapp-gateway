@@ -1,0 +1,32 @@
+meta {
+  name: Send message
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/v1/send
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{agentKey}}
+}
+
+body:json {
+  {
+    "to": "+15551234567",
+    "text": "hello from WA_GW"
+  }
+}
+
+script:post-response {
+  if (res.getStatus() === 202 && res.getBody().draft_id) {
+    bru.setEnvVar('draftId', res.getBody().draft_id);
+  }
+}
+
+docs {
+  200 sent (allowlisted + send:direct) or 202 pending_approval (captures draft_id).
+}

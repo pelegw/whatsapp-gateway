@@ -1,0 +1,33 @@
+# Public-exposure overlay. Use ON TOP of the base file:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.public.yml up -d
+#
+# It (1) removes the gateway's host port so it is reachable only via the edge
+# proxy on the internal network, and (2) adds a Caddy origin that terminates
+# TLS and enforces Cloudflare Authenticated Origin Pulls. Put Cloudflare
+# (orange-cloud proxy) in front of SITE_DOMAIN; see the README runbook.
+
+services:
+  gateway:
+    # Drop the loopback publish from the base file: only Caddy reaches it now.
+    ports: !reset []
+
+  edge:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [gateway]
+    networks: [internal]
+    ports:
+      - "443:443"          # the origin port Cloudflare connects to
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN:?set to your public hostname, e.g. wa.example.com}
+      ORIGIN_SECRET: ${ORIGIN_SECRET:?set the same value the gateway checks}
+    volumes:
+      - ./edge/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Mount your Cloudflare Origin Certificate + key and the origin-pull CA:
+      #   certs/origin.pem  certs/origin.key  certs/cloudflare-origin-pull-ca.pem
+      - ./edge/certs:/certs:ro
+      - caddy_data:/data
+
+volumes:
+  caddy_data: {}

@@ -1,0 +1,39 @@
+meta {
+  name: Create key
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/v1/admin/keys
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{adminToken}}
+}
+
+body:json {
+  {
+    "name": "bruno-test",
+    "role": "read-draft",
+    "allowlist": [],
+    "rate_per_min": 6,
+    "expires_in_days": 30
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+script:post-response {
+  if (res.getStatus() === 200 && res.getBody().key) {
+    bru.setEnvVar('agentKey', res.getBody().key);
+  }
+}
+
+docs {
+  Creates an agent key with a role and stores the one-time plaintext into {{agentKey}}. Roles: read-only (default) | read-draft | read-send. read-send delivers immediately; add an allowlist to limit who it can auto-send to.
+}

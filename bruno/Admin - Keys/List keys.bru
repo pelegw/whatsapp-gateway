@@ -1,0 +1,29 @@
+meta {
+  name: List keys
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/v1/admin/keys
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{adminToken}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+script:post-response {
+  if (res.getStatus() === 200 && res.getBody().length) {
+    bru.setEnvVar('keyId', String(res.getBody()[res.getBody().length - 1].id));
+  }
+}
+
+docs {
+  Shows scopes, expires_at, last_used_at/ip, and a 'rotating' flag. Captures keyId.
+}

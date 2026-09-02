@@ -1,0 +1,29 @@
+meta {
+  name: List chats
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/v1/chats?q=&limit=20&offset=0
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{agentKey}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+script:post-response {
+  if (res.getStatus() === 200 && res.getBody().length) {
+    bru.setEnvVar('chatJid', res.getBody()[0].jid);
+  }
+}
+
+docs {
+  Recent chats. Captures the first chat's jid into {{chatJid}} for the next requests.
+}

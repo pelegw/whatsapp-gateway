@@ -1,0 +1,23 @@
+meta {
+  name: Admin route without admin token is 401
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/v1/admin/keys
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{agentKey}}
+}
+
+assert {
+  res.status: eq 401
+}
+
+docs {
+  An agent key must NOT reach the admin plane; only the admin token does.
+}

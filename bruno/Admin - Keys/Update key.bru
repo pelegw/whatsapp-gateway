@@ -1,0 +1,25 @@
+meta {
+  name: Update key
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{baseUrl}}/v1/admin/keys/{{keyId}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{adminToken}}
+}
+
+body:json {
+  {
+    "rate_per_min": 10
+  }
+}
+
+docs {
+  Patch scopes / allowlist / rate_per_min / disabled.
+}

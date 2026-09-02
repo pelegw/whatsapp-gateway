@@ -1,0 +1,23 @@
+meta {
+  name: Bad key is 401
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/v1/chats
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: wagw_deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef
+}
+
+assert {
+  res.status: eq 401
+}
+
+docs {
+  A well-formed but unknown key must be rejected.
+}

@@ -1,0 +1,19 @@
+meta {
+  name: Search messages
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/v1/messages/search?q=hello&limit=20
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{agentKey}}
+}
+
+assert {
+  res.status: eq 200
+}

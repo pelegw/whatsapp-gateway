@@ -1,0 +1,19 @@
+meta {
+  name: No key is 401
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/v1/chats
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 401
+}
+
+docs {
+  An agent route with no Authorization header must be rejected.
+}
