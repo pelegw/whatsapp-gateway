@@ -11,6 +11,10 @@ services:
   gateway:
     # Drop the loopback publish from the base file: only Caddy reaches it now.
     ports: !reset []
+    environment:
+      # Caddy forwards the original Host header (your public domain), so the
+      # /mcp DNS-rebinding guard must accept it — otherwise MCP clients get 421.
+      MCP_ALLOWED_HOSTS: "localhost:*,127.0.0.1:*,${SITE_DOMAIN:?set SITE_DOMAIN in .env}"
 
   edge:
     image: caddy:2-alpine
