@@ -46,8 +46,27 @@ CREATE TABLE IF NOT EXISTS audit_log (
     detail   TEXT NOT NULL DEFAULT '',  -- JSON blob
     result   TEXT NOT NULL DEFAULT 'ok'
 );
+-- Granular, human-approved capabilities that supplement a key's base role.
+CREATE TABLE IF NOT EXISTS grants (
+    id          TEXT PRIMARY KEY,               -- uuid4
+    key_id      INTEGER NOT NULL,
+    kind        TEXT NOT NULL,                  -- send_recipient | send_window
+    to_jid      TEXT,                           -- set for send_recipient; NULL for send_window
+    expires_at  INTEGER,                        -- NULL = never
+    reason      TEXT NOT NULL DEFAULT '',
+    status      TEXT NOT NULL DEFAULT 'pending',-- pending|approved|rejected|expired|revoked
+    created_at  INTEGER NOT NULL,
+    decided_at  INTEGER
+);
+-- Runtime, admin-managed key/value config (e.g. Telegram enable + linked chat).
+CREATE TABLE IF NOT EXISTS app_config (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts);
 CREATE INDEX IF NOT EXISTS idx_drafts_status ON drafts(status);
+CREATE INDEX IF NOT EXISTS idx_grants_status ON grants(status);
+CREATE INDEX IF NOT EXISTS idx_grants_key_active ON grants(key_id, status);
 """
 
 
@@ -93,3 +112,20 @@ def init() -> None:
     with connect() as conn:
         conn.executescript(SCHEMA)
         _migrate(conn)
+
+
+# ---- runtime key/value config (app_config) --------------------------------
+
+def get_config(key: str, default: str | None = None) -> str | None:
+    with connect() as conn:
+        row = conn.execute("SELECT value FROM app_config WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else default
+
+
+def set_config(key: str, value: str) -> None:
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO app_config (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )

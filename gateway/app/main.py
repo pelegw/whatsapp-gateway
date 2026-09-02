@@ -4,6 +4,8 @@ Run with exactly ONE uvicorn worker: rate limiting is in-process and SQLite
 writes assume a single writer per database.
 """
 
+import asyncio
+import contextlib
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -14,7 +16,8 @@ from .config import get_settings, validate_exposure
 from .mcp_server import MCPAuthMiddleware, mcp
 from .origin import OriginGuardMiddleware
 from .policy import PolicyError
-from .routers import admin, chats, contacts, drafts, health, media, messages, send, skill
+from .routers import (admin, chats, contacts, drafts, health, media, messages,
+                      permissions, send, skill)
 from .sidecar import SidecarError
 
 
@@ -24,10 +27,23 @@ async def lifespan(app: FastAPI):
     # with the admin plane left on the token alone).
     validate_exposure(get_settings())
     db.init()
+    # Telegram long-poll worker: runs iff a bot token is configured (enable +
+    # linked chat are managed at runtime from the admin panel). Started here so
+    # it shares the app event loop; cancelled cleanly on shutdown.
+    poll_task = None
+    if get_settings().telegram_bot_token:
+        from .notify import telegram
+        poll_task = asyncio.create_task(telegram.poll_loop())
     # The MCP session manager MUST run inside the parent app's lifespan,
     # otherwise /mcp requests die with "Task group is not initialized".
-    async with mcp.session_manager.run():
-        yield
+    try:
+        async with mcp.session_manager.run():
+            yield
+    finally:
+        if poll_task is not None:
+            poll_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await poll_task
 
 
 # In public mode the interactive API docs (which reveal the full surface) are
@@ -41,8 +57,8 @@ api = FastAPI(
 )
 
 for r in (health.router, chats.router, messages.router, contacts.router,
-          media.router, send.router, drafts.router, skill.router,
-          admin.router, admin.page_router):
+          media.router, send.router, drafts.router, permissions.router,
+          skill.router, admin.router, admin.page_router):
     api.include_router(r)
 
 

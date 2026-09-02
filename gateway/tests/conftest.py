@@ -101,6 +101,39 @@ def fake_sidecar(monkeypatch):
 
 
 @pytest.fixture()
+def fake_telegram(env, monkeypatch):
+    """Enable Telegram (token + enabled + linked chat) and replace the low-level
+    Telegram HTTP ops with a recording double. `inject(update)` queues updates
+    that `_get_updates` drains FIFO — the same pattern as `fake_sidecar`."""
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token")
+    from app.config import get_settings
+    get_settings.cache_clear()
+    from app import db
+    db.set_config("telegram_enabled", "1")
+    db.set_config("telegram_chat_id", "4242")
+
+    rec = {"sent": [], "answered": [], "edited": [], "_updates": []}
+
+    def send_message(text, keyboard=None):
+        rec["sent"].append({"text": text, "keyboard": keyboard})
+        return {"message_id": len(rec["sent"])}
+
+    def get_updates(offset, timeout):
+        out, rec["_updates"] = rec["_updates"], []
+        return out
+
+    monkeypatch.setattr("app.notify.telegram._api_send_message", send_message)
+    monkeypatch.setattr("app.notify.telegram._answer_callback",
+                        lambda cb_id, text="": rec["answered"].append({"cb": cb_id, "text": text}))
+    monkeypatch.setattr("app.notify.telegram._edit_message",
+                        lambda mid, text: rec["edited"].append({"mid": mid, "text": text}))
+    monkeypatch.setattr("app.notify.telegram._get_updates", get_updates)
+    monkeypatch.setattr("app.notify.telegram._get_me", lambda: "wagw_test_bot")
+    rec["inject"] = lambda u: rec["_updates"].append(u)
+    return rec
+
+
+@pytest.fixture()
 def client(env):
     from app.main import app
     return TestClient(app)

@@ -1,0 +1,35 @@
+meta {
+  name: Request permission
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/v1/permissions/request
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{agentKey}}
+}
+
+body:json {
+  {
+    "kind": "send_recipient",
+    "contact": "+15551234567",
+    "reason": "reply to a customer"
+  }
+}
+
+script:post-response {
+  if (res.getStatus() === 201 && res.getBody().id) {
+    bru.setEnvVar('grantId', res.getBody().id);
+  }
+}
+
+docs {
+  Ask the human for a scoped grant. kind: send_recipient (needs contact; add
+  duration_hours to time-limit) or send_window (needs duration_hours). Captures
+  grantId. Approve it in the admin console or Telegram.
+}

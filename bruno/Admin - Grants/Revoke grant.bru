@@ -1,0 +1,15 @@
+meta {
+  name: Revoke grant
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/v1/admin/grants/{{grantId}}/revoke
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{adminToken}}
+}

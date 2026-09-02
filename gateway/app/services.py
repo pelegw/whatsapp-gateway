@@ -8,7 +8,7 @@ interfaces. All functions take the acting AuthContext first.
 import time
 import uuid
 
-from . import audit, db, policy, sidecar, wastore
+from . import audit, db, grants, notify, policy, sidecar, wastore
 from .auth import (DRAFTS_READ, READ_CHATS, READ_CONTACTS, READ_MEDIA,
                    READ_MESSAGES, SEND_DIRECT, SEND_DRAFT, AuthContext)
 from .config import get_settings
@@ -93,9 +93,14 @@ def send_message(auth: AuthContext, to: str, text: str) -> dict:
                 "detail": "this message needs human approval before it is sent"}
 
     # Defense in depth: role routing already decided "direct", but require the
-    # underlying scope too, so a message can never be delivered without
-    # send:direct even if role and scopes ever drifted apart.
-    _require(auth, SEND_DIRECT)
+    # underlying scope too — UNLESS an active grant authorizes this recipient (a
+    # grant legitimately elevates a key that lacks send:direct). This re-check at
+    # delivery time means a message still can't be sent without either the scope
+    # or a matching grant, even if role and scopes ever drifted apart.
+    if not auth.has(SEND_DIRECT):
+        if not grants.has_active(auth.key_id, to_jid):
+            _require(auth, SEND_DIRECT)   # raises 403 + audits authz.denied
+        audit.audit(auth.name, "grant.exercised", resource=to_jid)
     policy.enforce_rate_limits(auth, auth.name)
     try:
         res = sidecar.send_text(to_jid, text)
@@ -131,6 +136,10 @@ def create_draft(auth: AuthContext, to: str, text: str, note: str = "") -> dict:
             draft,
         )
     audit.audit(auth.name, "draft.created", resource=to_jid, detail={"draft_id": draft["id"]})
+    # Live approval channel (Telegram etc.) — the single choke point for every
+    # draft path (POST /v1/drafts, MCP create_draft, send_message's draft route).
+    # Non-fatal: a notification failure never fails the draft.
+    notify.notify_draft({**draft, "key_name": auth.name})
     return draft
 
 
@@ -190,3 +199,54 @@ def cancel_draft(auth: AuthContext, draft_id: str) -> dict:
             raise PolicyError(404, "no pending draft with that id for this key")
     audit.audit(auth.name, "draft.canceled", resource=draft_id)
     return {"id": draft_id, "status": "canceled"}
+
+
+# ---------------------------------------------------------------- permission grants
+
+def request_permission(auth: AuthContext, kind: str, contact: str | None = None,
+                       duration_hours: int | None = None, reason: str = "") -> dict:
+    """Ask the human (via the live channel / console) for a scoped capability.
+
+    Any authenticated key may ask — a read-only key must be able to request the
+    ability to send. Kinds:
+      - send_recipient: may auto-send to `contact` (optionally only for a window).
+      - send_window: may auto-send to anyone for `duration_hours`.
+    Approving the returned pending grant activates it (see admin_services.decide_grant).
+    """
+    if kind not in grants.KINDS:
+        raise PolicyError(400, f"unknown kind {kind!r} (want one of {list(grants.KINDS)})")
+    now = int(time.time())
+    expires_at = None
+    if duration_hours is not None:
+        if duration_hours <= 0:
+            raise PolicyError(400, "duration_hours must be positive")
+        capped = min(duration_hours, get_settings().grant_max_hours)
+        expires_at = now + capped * 3600
+
+    if kind == grants.KIND_RECIPIENT:
+        if not contact:
+            raise PolicyError(400, "send_recipient requires 'contact'")
+        to_jid = policy.normalize_jid(contact)
+    else:  # send_window
+        if duration_hours is None:
+            raise PolicyError(400, "send_window requires 'duration_hours'")
+        to_jid = None
+
+    grant = grants.create(auth.key_id, kind, to_jid, expires_at, reason)
+    audit.audit(auth.name, "permission.requested", resource=grant["id"],
+                detail={"kind": kind, "to_jid": to_jid, "expires_at": expires_at})
+    notify.notify_grant_request({**grant, "key_name": auth.name})   # non-fatal
+    return grant
+
+
+def get_permission_status(auth: AuthContext, grant_id: str) -> dict:
+    grants.sweep_expired()
+    grant = grants.get(grant_id)
+    if grant is None or grant["key_id"] != auth.key_id:
+        raise PolicyError(404, "no such permission request for this key")
+    return grant
+
+
+def list_my_permissions(auth: AuthContext, limit: int = 50) -> list[dict]:
+    grants.sweep_expired()
+    return grants.list_for_key(auth.key_id, _clamp(limit, 200))

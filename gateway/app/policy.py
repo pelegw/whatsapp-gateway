@@ -14,7 +14,7 @@ import re
 import threading
 import time
 
-from . import audit
+from . import audit, grants
 from .auth import ROLE_DRAFT, ROLE_SEND, AuthContext
 from .config import get_settings
 
@@ -93,14 +93,23 @@ def route_send(auth: AuthContext, to_jid: str) -> str:
 
     read-send auto-delivers: to anyone if it has no allowlist, or to allowlisted
     recipients while routing off-list ones to a draft. read-draft always drafts.
-    read-only cannot send.
+    read-only cannot send. An active human-approved GRANT (recipient-scoped or a
+    time window) widens this — a matching grant turns a would-be draft/denial
+    into a direct send, even for a read-only key.
     """
     if auth.role == ROLE_SEND:
         if not auth.send_allowlist or to_jid in auth.send_allowlist:
             return "direct"
-        return "draft"  # off its allowlist -> ask a human
+        if grants.has_active(auth.key_id, to_jid):
+            return "direct"          # off-allowlist but explicitly granted
+        return "draft"               # off its allowlist -> ask a human
     if auth.role == ROLE_DRAFT:
+        if grants.has_active(auth.key_id, to_jid):
+            return "direct"          # grant auto-sends what would be a draft
         return "draft"
+    # read-only
+    if grants.has_active(auth.key_id, to_jid):
+        return "direct"              # grant elevates a read-only key for this target
     audit.audit(auth.name, "send.denied", resource=to_jid,
                 detail={"reason": "read-only key may not send"},
                 result="denied")

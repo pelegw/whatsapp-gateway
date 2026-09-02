@@ -45,6 +45,11 @@ services:
       # Boot fails closed if ORIGIN_SECRET is set without Cloudflare Access;
       # set this true only if you accept admin-token-only protection.
       ALLOW_INSECURE_ADMIN: ${ALLOW_INSECURE_ADMIN:-false}
+      # Telegram live-approval channel. Only the bot token is env (the sole
+      # Telegram secret); enable it and link your chat from the /admin panel.
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_POLL_TIMEOUT: ${TELEGRAM_POLL_TIMEOUT:-25}
+      GRANT_MAX_HOURS: ${GRANT_MAX_HOURS:-720}
       TZ: ${TZ:-UTC}
 
 networks:

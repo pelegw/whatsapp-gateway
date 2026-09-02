@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from .. import admin_services, sidecar
 from ..deps import require_admin
+from ..notify import telegram as tg
 
 router = APIRouter(dependencies=[Depends(require_admin)])
 TEMPLATES = Path(__file__).resolve().parent.parent / "templates"
@@ -80,6 +81,59 @@ def update_key(key_id: int, body: KeyPatch) -> dict:
 @router.post("/v1/admin/keys/{key_id}/rotate")
 def rotate_key(key_id: int) -> dict:
     return admin_services.rotate_key(key_id)
+
+
+# ------------------------------------------------------------ permission grants
+
+@router.get("/v1/admin/grants")
+def list_grants(status: str | None = None) -> list[dict]:
+    return admin_services.list_grants(status)
+
+
+@router.post("/v1/admin/grants/{grant_id}/approve")
+def approve_grant(grant_id: str) -> dict:
+    return admin_services.decide_grant(grant_id, approve=True)
+
+
+@router.post("/v1/admin/grants/{grant_id}/reject")
+def reject_grant(grant_id: str) -> dict:
+    return admin_services.decide_grant(grant_id, approve=False)
+
+
+@router.post("/v1/admin/grants/{grant_id}/revoke")
+def revoke_grant(grant_id: str) -> dict:
+    return admin_services.revoke_grant(grant_id)
+
+
+# ------------------------------------------------------------ Telegram channel
+
+class TelegramEnable(BaseModel):
+    enabled: bool
+
+
+@router.get("/v1/admin/telegram")
+def telegram_status() -> dict:
+    return tg.status()
+
+
+@router.post("/v1/admin/telegram/link/start")
+def telegram_link_start() -> dict:
+    return tg.start_linking()
+
+
+@router.post("/v1/admin/telegram/enable")
+def telegram_enable(body: TelegramEnable) -> dict:
+    return tg.set_enabled(body.enabled)
+
+
+@router.post("/v1/admin/telegram/test")
+def telegram_test() -> dict:
+    return tg.send_test()
+
+
+@router.post("/v1/admin/telegram/unlink")
+def telegram_unlink() -> dict:
+    return tg.unlink()
 
 
 # ------------------------------------------------------------ audit + status

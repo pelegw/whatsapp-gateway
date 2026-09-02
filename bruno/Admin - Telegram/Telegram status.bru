@@ -1,0 +1,20 @@
+meta {
+  name: Telegram status
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/v1/admin/telegram
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{adminToken}}
+}
+
+docs {
+  Shows token_present / enabled / chat_linked / bot_username / loop_running.
+  Link + enable from the /admin console UI; these routes back that UI.
+}

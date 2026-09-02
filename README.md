@@ -98,7 +98,8 @@ claude mcp add --transport http wa-gw http://localhost:8080/mcp \
 
 Tools exposed: `list_chats`, `read_messages`, `search_messages`,
 `search_contacts`, `send_message`, `create_draft`, `get_draft_status`,
-`list_my_drafts`. There is deliberately **no approve tool** — approval is
+`list_my_drafts`, `request_permission`, `get_permission_status`,
+`list_my_permissions`. There is deliberately **no approve tool** — approval is
 human-only.
 
 ### Point agents at the gateway
@@ -145,6 +146,33 @@ an approval is being delivered. Approving while WhatsApp is unlinked keeps the
 draft `pending` so you can retry once it reconnects. Same thing via CLI:
 `python gateway/cli/wagw.py approvals list / approve <id> / reject <id>`.
 
+### 5. Approvals via Telegram (optional)
+
+Approve or reject from your phone instead of the console. Create a bot with
+**@BotFather**, then:
+
+1. Put the token in `.env` as `TELEGRAM_BOT_TOKEN` and redeploy once (the token is
+   the *only* Telegram secret; it never leaves env).
+2. In `/admin` → **Telegram approvals**, click **Link my chat**, send any message
+   to your bot, and it links automatically (no manual chat id). Then flip **Enable**.
+
+Now every pending draft — and every privilege request (below) — arrives as a
+Telegram card with **Approve / Reject** buttons. Tapping is equivalent to the web
+console (an atomic claim means whichever you use first wins; the other becomes a
+no-op). Connectivity is **long-polling** — no inbound webhook, no Cloudflare change.
+
+### Privilege requests (grants)
+
+An agent whose key can't send (read-only, or a recipient off its allowlist) can
+**ask** for a scoped capability instead of failing: `POST /v1/permissions/request`
+(or the MCP `request_permission` tool) with either
+`{"kind":"send_recipient","contact":"+1…"}` ("always send to X", add
+`duration_hours` to time-limit) or `{"kind":"send_window","duration_hours":2}`
+("send to anyone for 2h"). You approve the **grant** in `/admin` (or Telegram);
+an active grant *supplements* the key's role — so even a read-only key can be
+granted send-to-X — and the policy engine honors it at send time. Manage grants
+under `/v1/admin/grants` (list / approve / reject / revoke).
+
 ## REST API (agents)
 
 `Authorization: Bearer wagw_...` on every call.
@@ -158,11 +186,13 @@ draft `pending` so you can retry once it reconnects. Same thing via CLI:
 | `GET /v1/media/{chat_jid}/{message_id}` | download media of an archived message |
 | `POST /v1/send {to, text}` | 200 sent · 202 pending_approval · 403/429 denied |
 | `POST /v1/drafts` / `GET /v1/drafts` / `DELETE /v1/drafts/{id}` | explicit drafts |
+| `POST /v1/permissions/request` / `GET /v1/permissions[/{id}]` | request/track a scoped grant |
 | `GET /v1/health` | no auth; gateway/sidecar/link status |
 
 Admin endpoints (`Authorization: Bearer <ADMIN_TOKEN>`): `/v1/admin/keys`,
-`/v1/admin/drafts` + `/approve|/reject`, `/v1/admin/audit`, `/v1/admin/status`,
-`/v1/admin/qr`. Interactive docs at `/docs`.
+`/v1/admin/drafts` + `/approve|/reject`, `/v1/admin/grants` +
+`/approve|/reject|/revoke`, `/v1/admin/telegram` (status/link/enable/test/unlink),
+`/v1/admin/audit`, `/v1/admin/status`, `/v1/admin/qr`. Interactive docs at `/docs`.
 
 ## Runbooks
 

@@ -1,0 +1,15 @@
+meta {
+  name: Reject grant
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/v1/admin/grants/{{grantId}}/reject
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{adminToken}}
+}

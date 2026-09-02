@@ -124,11 +124,26 @@
     </div>
   </section>
 
+  <section id="telegramSection">
+    <div class="sec-head"><h2>Telegram approvals</h2><span class="count" id="tgState"></span></div>
+    <div class="card">
+      <div id="tgBody" class="hint" style="margin-bottom:.7rem"></div>
+      <div class="row-actions" id="tgActions"></div>
+    </div>
+  </section>
+
   <section id="approvalsSection">
     <div class="sec-head">
       <h2>Pending approvals</h2><span class="count" id="draftCount"></span>
     </div>
     <div id="draftList"></div>
+  </section>
+
+  <section id="permsSection">
+    <div class="sec-head">
+      <h2>Pending permissions</h2><span class="count" id="permCount"></span>
+    </div>
+    <div id="permList"></div>
   </section>
 
   <section id="keysSection">
@@ -317,10 +332,78 @@ $("newKeyForm").onsubmit = async (e) => {
   refreshKeys();
 };
 
+// ---- Telegram ---------------------------------------------------------------
+async function refreshTelegram() {
+  const t = await api("/v1/admin/telegram");
+  $("tgState").textContent = !t.token_present ? "no token"
+    : t.enabled && t.chat_linked ? "on" : t.chat_linked ? "linked (off)" : "not linked";
+  const body = $("tgBody"), acts = $("tgActions");
+  body.replaceChildren(); acts.replaceChildren();
+  if (!t.token_present) {
+    body.textContent = "Set TELEGRAM_BOT_TOKEN in .env and redeploy to enable Telegram approvals.";
+    return;
+  }
+  const bot = t.bot_username ? "@" + t.bot_username : "your bot";
+  body.textContent = t.chat_linked
+    ? `Linked to chat ${t.chat_id}. Approvals ${t.enabled ? "are being sent here." : "are paused (not enabled)."}`
+    : `Click “Link my chat”, message ${bot} on Telegram, then it links automatically.`;
+  const btn = (label, cls, fn) => { const b = el("button", cls, label); b.onclick = fn; acts.append(b); };
+  if (!t.chat_linked) btn("Link my chat", "primary", tgLink);
+  else {
+    btn(t.enabled ? "Disable" : "Enable", t.enabled ? "ghost" : "green",
+        () => tgAction("/v1/admin/telegram/enable", { enabled: !t.enabled }));
+    btn("Send test", "ghost", () => tgAction("/v1/admin/telegram/test"));
+    btn("Unlink", "ghost", () => tgAction("/v1/admin/telegram/unlink"));
+  }
+}
+async function tgLink() {
+  showErr();
+  try {
+    const r = await api("/v1/admin/telegram/link/start", { method: "POST" });
+    alert(r.instructions || "Message your bot on Telegram, then Refresh.");
+  } catch (e) { showErr(e); }
+  refreshTelegram();
+}
+async function tgAction(path, body) {
+  showErr();
+  try { await api(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }); }
+  catch (e) { showErr(e); }
+  refreshTelegram();
+}
+
+// ---- pending permissions ----------------------------------------------------
+async function refreshGrants() {
+  const gs = await api("/v1/admin/grants?status=pending");
+  $("permCount").textContent = gs.length ? `${gs.length} waiting` : "";
+  const list = $("permList"); list.replaceChildren();
+  if (!gs.length) { list.append(el("div", "empty", "No permission requests.")); return; }
+  for (const g of gs) {
+    const card = el("div", "card draft");
+    const want = g.kind === "send_recipient"
+      ? `send to ${g.to_jid}` + (g.expires_at ? " (time-limited)" : " (always)")
+      : "send to anyone (time-limited)";
+    card.append(el("div", "meta", `${g.key_name} · ${ago(g.created_at)}`));
+    card.append(el("div", "body", "Wants permission to " + want));
+    if (g.reason) card.append(el("div", "note", g.reason));
+    const actions = el("div", "actions");
+    const approve = el("button", "green", "Approve");
+    const reject = el("button", "red", "Reject");
+    approve.onclick = () => decideGrant(g.id, "approve", approve, reject);
+    reject.onclick = () => decideGrant(g.id, "reject", approve, reject);
+    actions.append(approve, reject); card.append(actions); list.append(card);
+  }
+}
+async function decideGrant(id, action, ...btns) {
+  btns.forEach(b => b.disabled = true); showErr();
+  try { await api(`/v1/admin/grants/${id}/${action}`, { method: "POST" }); }
+  catch (e) { showErr(e); btns.forEach(b => b.disabled = false); }
+  refreshGrants();
+}
+
 // ---- boot + poll ------------------------------------------------------------
 async function refreshAll() {
   showErr();
-  try { await Promise.all([refreshStatus(), refreshDrafts(), refreshKeys()]); }
+  try { await Promise.all([refreshStatus(), refreshDrafts(), refreshKeys(), refreshTelegram(), refreshGrants()]); }
   catch (e) { showErr(e); }
 }
 $("refreshBtn").onclick = refreshAll;
@@ -331,7 +414,12 @@ $("logoutBtn").onclick = () => {
   location.reload();
 };
 refreshAll();
-setInterval(() => { refreshStatus().catch(() => {}); refreshDrafts().catch(() => {}); }, 15000);
+setInterval(() => {
+  refreshStatus().catch(() => {});
+  refreshDrafts().catch(() => {});
+  refreshGrants().catch(() => {});
+  refreshTelegram().catch(() => {});
+}, 15000);
 </script>
 </body>
 </html>

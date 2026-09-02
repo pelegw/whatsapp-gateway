@@ -8,6 +8,7 @@ from .conftest import ALICE, bearer
 EXPECTED_TOOLS = {
     "list_chats", "read_messages", "search_messages", "search_contacts",
     "send_message", "create_draft", "get_draft_status", "list_my_drafts",
+    "request_permission", "get_permission_status", "list_my_permissions",
 }
 
 

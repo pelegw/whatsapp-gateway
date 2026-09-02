@@ -7,7 +7,7 @@ never by agents, and deliberately not exposed as MCP tools.
 import json
 import time
 
-from . import audit, auth, db, policy, sidecar
+from . import audit, auth, db, grants, policy, sidecar
 from .auth import AuthContext
 from .policy import PolicyError
 
@@ -111,6 +111,60 @@ def decide_draft(draft_id: str, approve: bool) -> dict:
                 detail={"draft_id": draft_id, "on_behalf_of": row["key_name"],
                         "message_id": res.get("message_id")})
     return {"id": draft_id, "status": "sent", "message_id": res.get("message_id")}
+
+
+# ---------------------------------------------------------------- permission grants
+
+def list_grants(status: str | None = None, limit: int = 100) -> list[dict]:
+    grants.sweep_expired()
+    return grants.list_all(status, limit)
+
+
+def _claim_grant(grant_id: str, new_status: str, now: int) -> bool:
+    """Atomically move a pending grant to new_status (same concurrency primitive
+    as drafts: a Telegram tap and a console click can't both win)."""
+    with db.connect() as conn:
+        cur = conn.execute(
+            "UPDATE grants SET status = ?, decided_at = ? WHERE id = ? AND status = 'pending'",
+            (new_status, now, grant_id))
+        return cur.rowcount == 1
+
+
+def _grant_conflict(grant_id: str) -> PolicyError:
+    with db.connect() as conn:
+        row = conn.execute("SELECT status FROM grants WHERE id = ?", (grant_id,)).fetchone()
+    if row is None:
+        return PolicyError(404, "no such permission request")
+    return PolicyError(409, f"permission request is {row['status']!r}, not pending")
+
+
+def decide_grant(grant_id: str, approve: bool) -> dict:
+    """Approve (activate) or reject a pending grant. No sidecar send — a grant
+    only authorizes future sends, which the policy engine then honors."""
+    grants.sweep_expired()
+    now = int(time.time())
+    new_status = "approved" if approve else "rejected"
+    if not _claim_grant(grant_id, new_status, now):
+        raise _grant_conflict(grant_id)
+    row = grants.get(grant_id)
+    audit.audit("admin", "grant.approved" if approve else "grant.rejected",
+                resource=grant_id,
+                detail={"key": row["key_name"], "kind": row["kind"],
+                        "to_jid": row["to_jid"], "expires_at": row["expires_at"]})
+    return {"id": grant_id, "status": new_status}
+
+
+def revoke_grant(grant_id: str) -> dict:
+    """Revoke a previously approved (active) grant."""
+    with db.connect() as conn:
+        cur = conn.execute(
+            "UPDATE grants SET status = 'revoked', decided_at = ? "
+            "WHERE id = ? AND status = 'approved'",
+            (int(time.time()), grant_id))
+        if cur.rowcount == 0:
+            raise PolicyError(404, "no active grant with that id")
+    audit.audit("admin", "grant.revoked", resource=grant_id)
+    return {"id": grant_id, "status": "revoked"}
 
 
 def create_key(name: str, role: str = auth.ROLE_READ,

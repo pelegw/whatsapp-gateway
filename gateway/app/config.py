@@ -56,6 +56,14 @@ class Settings(BaseSettings):
     # closed at boot instead of silently guarding admin with the token alone.
     allow_insecure_admin: bool = False
 
+    # Telegram live-approval channel. The bot TOKEN is the only Telegram secret
+    # and lives here (env only); whether it's enabled and which chat is linked are
+    # runtime state managed from the admin panel (app_config table). With no token
+    # the whole feature is inert (no poll loop, no notifications).
+    telegram_bot_token: str = ""
+    telegram_poll_timeout: int = 25    # getUpdates long-poll seconds
+    grant_max_hours: int = 720         # cap on a requested grant's duration
+
     def public_mode(self) -> bool:
         """True once an edge origin secret is configured (internet exposure)."""
         return bool(self.origin_secret)

@@ -115,6 +115,30 @@ async def list_my_drafts() -> str:
     return await _run(services.list_my_drafts, _auth())
 
 
+@mcp.tool()
+async def request_permission(kind: str, contact: str = "", duration_hours: int = 0,
+                             reason: str = "") -> str:
+    """Ask the human for a scoped capability (they approve it live). kind is
+    'send_recipient' (may auto-send to `contact`; add `duration_hours` to
+    time-limit it) or 'send_window' (may auto-send to anyone for `duration_hours`).
+    Returns a pending grant with an id; poll get_permission_status. This is how a
+    read-only or read-draft key asks to be allowed to send."""
+    return await _run(services.request_permission, _auth(), kind, contact or None,
+                      duration_hours or None, reason)
+
+
+@mcp.tool()
+async def get_permission_status(grant_id: str) -> str:
+    """Check one permission request: pending / approved / rejected / expired / revoked."""
+    return await _run(services.get_permission_status, _auth(), grant_id)
+
+
+@mcp.tool()
+async def list_my_permissions() -> str:
+    """List this key's permission requests/grants and their statuses, newest first."""
+    return await _run(services.list_my_permissions, _auth())
+
+
 class MCPAuthMiddleware:
     """ASGI wrapper for the mounted MCP app: Bearer key -> AuthContext contextvar."""
 
