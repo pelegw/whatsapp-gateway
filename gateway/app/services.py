@@ -8,7 +8,7 @@ interfaces. All functions take the acting AuthContext first.
 import time
 import uuid
 
-from . import audit, db, grants, notify, policy, sidecar, wastore
+from . import audit, db, grants, notify, policy, privacy, sidecar, wastore
 from .auth import (DRAFTS_READ, READ_CHATS, READ_CONTACTS, READ_MEDIA,
                    READ_MESSAGES, SEND_DIRECT, SEND_DRAFT, AuthContext)
 from .config import get_settings
@@ -32,13 +32,16 @@ def _require(auth: AuthContext, scope: str) -> None:
 def list_chats(auth: AuthContext, query: str = "", limit: int = 50, offset: int = 0) -> list[dict]:
     _require(auth, READ_CHATS)
     audit.audit(auth.name, "read.chats", detail={"query": query})
-    return wastore.list_chats(query, _clamp(limit, 200), max(0, offset))
+    deny, allow_only = privacy.visible_filter(auth)
+    return wastore.list_chats(query, _clamp(limit, 200), max(0, offset), deny, allow_only)
 
 
 def get_chat(auth: AuthContext, jid: str) -> dict:
     _require(auth, READ_CHATS)
     audit.audit(auth.name, "read.chat", resource=jid)
-    chat = wastore.get_chat(jid)
+    deny, allow_only = privacy.visible_filter(auth)
+    # A hidden chat is indistinguishable from a nonexistent one (same 404).
+    chat = wastore.get_chat(jid, deny, allow_only)
     if chat is None:
         raise PolicyError(404, f"no chat {jid!r} in the archive")
     return chat
@@ -50,15 +53,17 @@ def list_messages(auth: AuthContext, chat_jid: str, limit: int = 50,
     _require(auth, READ_MESSAGES)
     audit.audit(auth.name, "read.messages", resource=chat_jid,
                 detail={"limit": limit, "before": before, "after": after})
+    deny, allow_only = privacy.visible_filter(auth)
     return wastore.list_messages(chat_jid, _clamp(limit, 200), before, after,
-                                 before_id, after_id)
+                                 before_id, after_id, deny, allow_only)
 
 
 def search_messages(auth: AuthContext, query: str, chat_jid: str | None = None,
                     limit: int = 20) -> list[dict]:
     _require(auth, READ_MESSAGES)
     audit.audit(auth.name, "read.search", detail={"query": query, "chat_jid": chat_jid})
-    return wastore.search_messages(query, chat_jid, _clamp(limit, 100))
+    deny, allow_only = privacy.visible_filter(auth)
+    return wastore.search_messages(query, chat_jid, _clamp(limit, 100), deny, allow_only)
 
 
 def list_contacts(auth: AuthContext, query: str = "", limit: int = 50) -> list[dict]:
@@ -69,16 +74,44 @@ def list_contacts(auth: AuthContext, query: str = "", limit: int = 50) -> list[d
 
 def get_media(auth: AuthContext, chat_jid: str, message_id: str) -> tuple[bytes, str]:
     _require(auth, READ_MEDIA)
+    # Visibility check BEFORE the sidecar call: a private chat's media must
+    # never leave the sidecar, not merely be withheld from the response.
+    deny, allow_only = privacy.visible_filter(auth)
+    if not wastore.chat_is_visible(chat_jid, deny, allow_only):
+        raise PolicyError(404, f"no chat {chat_jid!r} in the archive")
     audit.audit(auth.name, "read.media", resource=f"{chat_jid}/{message_id}")
     return sidecar.media(chat_jid, message_id)
 
 
+def list_events(auth: AuthContext, cursor: int | None = None, limit: int = 100) -> dict:
+    """New incoming messages since `cursor` (a rowid from a previous call).
+
+    cursor=None bootstraps: returns the current top of the archive and no
+    backlog, so an agent starts \"from now\". Privacy filtering (privacy.py)
+    applies exactly as it does to list/search. Empty polls are deliberately
+    not audited — a long-poll checks every second and would flood the log.
+    """
+    _require(auth, READ_MESSAGES)
+    if cursor is None:
+        return {"cursor": wastore.max_message_rowid(), "events": []}
+    deny, allow_only = privacy.visible_filter(auth)
+    cutoff = int(time.time()) - get_settings().events_freshness_seconds
+    events, next_cursor = wastore.list_events(
+        max(0, cursor), _clamp(limit, 200), cutoff, deny, allow_only)
+    if events:
+        audit.audit(auth.name, "read.events",
+                    detail={"count": len(events), "from": cursor, "to": next_cursor})
+    return {"cursor": next_cursor, "events": events}
+
+
 # ---------------------------------------------------------------- sends
 
-def send_message(auth: AuthContext, to: str, text: str) -> dict:
+def send_message(auth: AuthContext, to: str, text: str,
+                 send_at: int | None = None, delay_seconds: int | None = None) -> dict:
     """Policy-routed send by role: read-send delivers immediately, read-draft
     (or a read-send key messaging off its allowlist) queues a draft, read-only
-    is rejected."""
+    is rejected. A future send_at (or delay_seconds) schedules the delivery
+    instead: the same policy decision applies, but the message fires later."""
     if not text:
         raise PolicyError(400, "text must not be empty")
     to_jid = policy.normalize_jid(to)
@@ -86,7 +119,8 @@ def send_message(auth: AuthContext, to: str, text: str) -> dict:
     if route == "draft":
         note = ("(auto-routed: recipient not on this key's allowlist)"
                 if auth.role == "read-send" else "(read-draft key: awaiting approval)")
-        draft = create_draft(auth, to_jid, text, note=note)
+        draft = create_draft(auth, to_jid, text, note=note,
+                             send_at=send_at, delay_seconds=delay_seconds)
         audit.audit(auth.name, "send.routed_to_draft", resource=to_jid,
                     detail={"draft_id": draft["id"]})
         return {"status": "pending_approval", "draft_id": draft["id"],
@@ -101,6 +135,9 @@ def send_message(auth: AuthContext, to: str, text: str) -> dict:
         if not grants.has_active(auth.key_id, to_jid):
             _require(auth, SEND_DIRECT)   # raises 403 + audits authz.denied
         audit.audit(auth.name, "grant.exercised", resource=to_jid)
+    resolved_at = policy.resolve_send_at(send_at, delay_seconds)
+    if resolved_at is not None:
+        return _create_scheduled_direct(auth, to_jid, text, resolved_at)
     policy.enforce_rate_limits(auth, auth.name)
     try:
         res = sidecar.send_text(to_jid, text)
@@ -113,12 +150,19 @@ def send_message(auth: AuthContext, to: str, text: str) -> dict:
     return {"status": "sent", **res}
 
 
-def create_draft(auth: AuthContext, to: str, text: str, note: str = "") -> dict:
+def create_draft(auth: AuthContext, to: str, text: str, note: str = "",
+                 send_at: int | None = None, delay_seconds: int | None = None) -> dict:
     _require(auth, SEND_DRAFT)
     if not text:
         raise PolicyError(400, "text must not be empty")
     to_jid = policy.normalize_jid(to)
+    resolved_at = policy.resolve_send_at(send_at, delay_seconds)
     now = int(time.time())
+    # A scheduled draft must survive as 'scheduled' past the pending TTL, and
+    # the row should outlive its fire time by a bit for post-hoc inspection.
+    expires_at = now + get_settings().draft_ttl_hours * 3600
+    if resolved_at is not None:
+        expires_at = max(expires_at, resolved_at + 3600)
     draft = {
         "id": str(uuid.uuid4()),
         "key_id": auth.key_id,
@@ -127,20 +171,45 @@ def create_draft(auth: AuthContext, to: str, text: str, note: str = "") -> dict:
         "note": note,
         "status": "pending",
         "created_at": now,
-        "expires_at": now + get_settings().draft_ttl_hours * 3600,
+        "expires_at": expires_at,
+        "send_at": resolved_at,
     }
     with db.connect() as conn:
         conn.execute(
-            """INSERT INTO drafts (id, key_id, to_jid, body, note, status, created_at, expires_at)
-               VALUES (:id, :key_id, :to_jid, :body, :note, :status, :created_at, :expires_at)""",
+            """INSERT INTO drafts (id, key_id, to_jid, body, note, status, created_at,
+                                   expires_at, send_at)
+               VALUES (:id, :key_id, :to_jid, :body, :note, :status, :created_at,
+                       :expires_at, :send_at)""",
             draft,
         )
-    audit.audit(auth.name, "draft.created", resource=to_jid, detail={"draft_id": draft["id"]})
+    audit.audit(auth.name, "draft.created", resource=to_jid,
+                detail={"draft_id": draft["id"], "send_at": resolved_at})
     # Live approval channel (Telegram etc.) — the single choke point for every
     # draft path (POST /v1/drafts, MCP create_draft, send_message's draft route).
     # Non-fatal: a notification failure never fails the draft.
     notify.notify_draft({**draft, "key_name": auth.name})
     return draft
+
+
+def _create_scheduled_direct(auth: AuthContext, to_jid: str, text: str, send_at: int) -> dict:
+    """A direct-route send with a future send_at: pre-approved, fires later.
+    Stored as a draft row in status 'scheduled' so the scheduler, admin console,
+    cancellation, and audit all reuse the draft machinery."""
+    now = int(time.time())
+    draft_id = str(uuid.uuid4())
+    with db.connect() as conn:
+        conn.execute(
+            """INSERT INTO drafts (id, key_id, to_jid, body, note, status, created_at,
+                                   expires_at, decided_at, send_at)
+               VALUES (?, ?, ?, ?, ?, 'scheduled', ?, ?, ?, ?)""",
+            (draft_id, auth.key_id, to_jid, text,
+             "(auto-approved: scheduled direct send)", now,
+             max(now + get_settings().draft_ttl_hours * 3600, send_at + 3600),
+             now, send_at),
+        )
+    audit.audit(auth.name, "send.scheduled", resource=to_jid,
+                detail={"draft_id": draft_id, "send_at": send_at})
+    return {"status": "scheduled", "draft_id": draft_id, "send_at": send_at}
 
 
 def _sweep_expired() -> None:
@@ -188,15 +257,19 @@ def get_draft(auth: AuthContext, draft_id: str) -> dict:
 
 
 def cancel_draft(auth: AuthContext, draft_id: str) -> dict:
-    _require(auth, SEND_DRAFT)
+    # Ownership is the authorization here, not a scope: cancel only ever
+    # PREVENTS a send, and a grant-elevated key (e.g. read-only) must be able
+    # to undo its own scheduled send even though it lacks send:draft.
     with db.connect() as conn:
+        # Scheduled sends are cancellable until they fire; the atomic status
+        # guard means a cancel racing the scheduler's claim can never win late.
         cur = conn.execute(
             "UPDATE drafts SET status = 'canceled', decided_at = ? "
-            "WHERE id = ? AND key_id = ? AND status = 'pending'",
+            "WHERE id = ? AND key_id = ? AND status IN ('pending', 'scheduled')",
             (int(time.time()), draft_id, auth.key_id),
         )
         if cur.rowcount == 0:
-            raise PolicyError(404, "no pending draft with that id for this key")
+            raise PolicyError(404, "no pending or scheduled draft with that id for this key")
     audit.audit(auth.name, "draft.canceled", resource=draft_id)
     return {"id": draft_id, "status": "canceled"}
 

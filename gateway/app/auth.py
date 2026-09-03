@@ -63,6 +63,10 @@ class AuthContext:
     send_allowlist: list[str] = field(default_factory=list)
     rate_per_min: int = 6
     role: str = ROLE_READ
+    # Per-key read privacy (see privacy.py): chats this key may never read, and
+    # (when non-empty) the only chats it may read.
+    read_blocklist: list[str] = field(default_factory=list)
+    read_allowlist: list[str] = field(default_factory=list)
 
     def has(self, scope: str) -> bool:
         return scope in self.scopes
@@ -121,6 +125,8 @@ def authenticate_bearer(authorization: str | None, client_ip: str = "") -> AuthC
         send_allowlist=json.loads(row["send_allowlist"]),
         rate_per_min=row["rate_per_min"],
         role=role,
+        read_blocklist=json.loads(row["read_blocklist"] or "[]"),
+        read_allowlist=json.loads(row["read_allowlist"] or "[]"),
     )
 
 
@@ -136,7 +142,9 @@ def _touch_last_used(conn, row, now: int, client_ip: str) -> None:
 
 def create_key(name: str, allowlist: list[str], rate_per_min: int,
                role: str = ROLE_READ, scopes: list[str] | None = None,
-               expires_at: int | None = None) -> str:
+               expires_at: int | None = None,
+               read_blocklist: list[str] | None = None,
+               read_allowlist: list[str] | None = None) -> str:
     """Insert a new API key; returns the plaintext (the only time it exists).
 
     A role is the normal input and derives the scope set. An explicit scopes
@@ -155,9 +163,11 @@ def create_key(name: str, allowlist: list[str], rate_per_min: int,
     with db.connect() as conn:
         conn.execute(
             "INSERT INTO api_keys (name, key_hash, scopes, send_allowlist, rate_per_min,"
-            " created_at, expires_at, role) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            " created_at, expires_at, role, read_blocklist, read_allowlist)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (name, key_hash, json.dumps(scopes), json.dumps(allowlist),
-             rate_per_min, int(time.time()), expires_at, role),
+             rate_per_min, int(time.time()), expires_at, role,
+             json.dumps(read_blocklist or []), json.dumps(read_allowlist or [])),
         )
     return plaintext
 

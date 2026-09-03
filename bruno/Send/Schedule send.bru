@@ -1,0 +1,33 @@
+meta {
+  name: Schedule send
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/v1/send
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{agentKey}}
+}
+
+body:json {
+  {
+    "to": "+15551234567",
+    "text": "this arrives later",
+    "delay_seconds": 300
+  }
+}
+
+script:post-response {
+  if (res.getStatus() === 202 && res.getBody().draft_id) {
+    bru.setEnvVar('draftId', res.getBody().draft_id);
+  }
+}
+
+docs {
+  delay_seconds (or send_at, a unix ts — not both) schedules the delivery. A send-capable key gets 202 {"status":"scheduled"}; a drafting key gets 202 pending_approval and the schedule rides on the draft. Cancel while scheduled with DELETE /v1/drafts/{id}.
+}

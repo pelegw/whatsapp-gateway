@@ -52,6 +52,28 @@ def normalize_jid(to: str) -> str:
     return to.lstrip("+") + "@s.whatsapp.net"
 
 
+def resolve_send_at(send_at: int | None, delay_seconds: int | None) -> int | None:
+    """Validate scheduling input for a send/draft: a unix timestamp OR a delay,
+    never both. Returns the resolved unix ts, or None for \"send now\"."""
+    if send_at is not None and delay_seconds is not None:
+        raise PolicyError(400, "pass send_at or delay_seconds, not both")
+    now = int(time.time())
+    if delay_seconds is not None:
+        if delay_seconds <= 0:
+            raise PolicyError(400, "delay_seconds must be positive")
+        send_at = now + delay_seconds
+    if send_at is None:
+        return None
+    s = get_settings()
+    if send_at <= now + s.schedule_min_lead_seconds:
+        raise PolicyError(
+            400, f"send_at must be at least {s.schedule_min_lead_seconds}s in the future")
+    if send_at > now + s.schedule_max_horizon_days * 86400:
+        raise PolicyError(
+            400, f"send_at is more than {s.schedule_max_horizon_days} days out")
+    return send_at
+
+
 class RateLimiter:
     """In-process per-key sliding-minute counter. Single uvicorn worker only —
     a second worker would get its own (uncoordinated) limiter."""

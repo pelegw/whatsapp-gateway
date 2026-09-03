@@ -64,6 +64,17 @@ class Settings(BaseSettings):
     telegram_poll_timeout: int = 25    # getUpdates long-poll seconds
     grant_max_hours: int = 720         # cap on a requested grant's duration
 
+    # Events feed (GET /v1/events). Freshness guards against history-sync
+    # replays: old messages re-ingested with new rowids are not "new events".
+    events_freshness_seconds: int = 300
+    events_poll_interval_seconds: float = 1.0  # server-side long-poll check cadence
+    events_max_wait_seconds: int = 30          # cap on the client's ?wait=
+
+    # Scheduled sends ("approve now, deliver at T").
+    scheduler_tick_seconds: int = 20           # how often due sends are fired
+    schedule_max_horizon_days: int = 30        # furthest-out allowed send_at
+    schedule_min_lead_seconds: int = 30        # send_at must be at least this far out
+
     def public_mode(self) -> bool:
         """True once an edge origin secret is configured (internet exposure)."""
         return bool(self.origin_secret)

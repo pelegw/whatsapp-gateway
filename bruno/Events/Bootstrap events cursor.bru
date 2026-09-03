@@ -1,0 +1,29 @@
+meta {
+  name: Bootstrap events cursor
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/v1/events
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{agentKey}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+script:post-response {
+  if (res.getStatus() === 200) {
+    bru.setEnvVar('eventsCursor', res.getBody().cursor);
+  }
+}
+
+docs {
+  No cursor = bootstrap: returns the current top-of-archive cursor and NO backlog. Stores it into {{eventsCursor}} for the long-poll request.
+}

@@ -16,11 +16,15 @@ class DraftBody(BaseModel):
     text: str = Field(min_length=1, max_length=8000)
     note: str = Field(default="", max_length=500,
                       description="Why you wrote this — shown to the approving human")
+    # Scheduling (either one, not both): if approved, deliver at this time.
+    send_at: int | None = Field(default=None, description="unix ts to deliver at")
+    delay_seconds: int | None = Field(default=None, ge=1)
 
 
 @router.post("/v1/drafts")
 def create_draft(body: DraftBody, auth: AuthContext = Depends(current_auth)) -> JSONResponse:
-    draft = services.create_draft(auth, body.to, body.text, body.note)
+    draft = services.create_draft(auth, body.to, body.text, body.note,
+                                  send_at=body.send_at, delay_seconds=body.delay_seconds)
     return JSONResponse(status_code=201, content=draft)
 
 

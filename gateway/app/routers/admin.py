@@ -34,6 +34,12 @@ def reject(draft_id: str) -> dict:
     return admin_services.decide_draft(draft_id, approve=False)
 
 
+@router.post("/v1/admin/drafts/{draft_id}/cancel")
+def cancel_scheduled(draft_id: str) -> dict:
+    """Cancel a scheduled send before it fires (list them with ?status=scheduled)."""
+    return admin_services.cancel_scheduled(draft_id)
+
+
 # ------------------------------------------------------------ API keys
 
 ROLES = ("read-only", "read-draft", "read-send")
@@ -48,6 +54,9 @@ class KeyBody(BaseModel):
     allowlist: list[str] = []
     rate_per_min: int | None = Field(default=None, ge=1, le=60)
     expires_in_days: int | None = Field(default=None, ge=1, le=3650)
+    # Per-key read privacy (on top of the global private list).
+    read_blocklist: list[str] = []
+    read_allowlist: list[str] = []
 
 
 class KeyPatch(BaseModel):
@@ -56,13 +65,16 @@ class KeyPatch(BaseModel):
     allowlist: list[str] | None = None
     rate_per_min: int | None = Field(default=None, ge=1, le=60)
     disabled: bool | None = None
+    read_blocklist: list[str] | None = None
+    read_allowlist: list[str] | None = None
 
 
 @router.post("/v1/admin/keys")
 def create_key(body: KeyBody) -> dict:
     return admin_services.create_key(
         body.name, role=body.role, allowlist=body.allowlist, scopes=body.scopes,
-        rate_per_min=body.rate_per_min, expires_in_days=body.expires_in_days)
+        rate_per_min=body.rate_per_min, expires_in_days=body.expires_in_days,
+        read_blocklist=body.read_blocklist, read_allowlist=body.read_allowlist)
 
 
 @router.get("/v1/admin/keys")
@@ -75,7 +87,9 @@ def update_key(key_id: int, body: KeyPatch) -> dict:
     return admin_services.update_key(key_id, role=body.role, scopes=body.scopes,
                                      allowlist=body.allowlist,
                                      rate_per_min=body.rate_per_min,
-                                     disabled=body.disabled)
+                                     disabled=body.disabled,
+                                     read_blocklist=body.read_blocklist,
+                                     read_allowlist=body.read_allowlist)
 
 
 @router.post("/v1/admin/keys/{key_id}/rotate")
@@ -103,6 +117,28 @@ def reject_grant(grant_id: str) -> dict:
 @router.post("/v1/admin/grants/{grant_id}/revoke")
 def revoke_grant(grant_id: str) -> dict:
     return admin_services.revoke_grant(grant_id)
+
+
+# ------------------------------------------------------------ chat privacy
+
+class PrivateChatBody(BaseModel):
+    jid: str = Field(min_length=1)
+    reason: str = Field(default="", max_length=200)
+
+
+@router.get("/v1/admin/privacy/chats")
+def list_private_chats() -> list[dict]:
+    return admin_services.list_private_chats()
+
+
+@router.post("/v1/admin/privacy/chats", status_code=201)
+def add_private_chat(body: PrivateChatBody) -> dict:
+    return admin_services.add_private_chat(body.jid, body.reason)
+
+
+@router.delete("/v1/admin/privacy/chats/{jid}")
+def remove_private_chat(jid: str) -> dict:
+    return admin_services.remove_private_chat(jid)
 
 
 # ------------------------------------------------------------ Telegram channel

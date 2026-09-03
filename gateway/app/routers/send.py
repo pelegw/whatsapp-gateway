@@ -19,10 +19,14 @@ router = APIRouter()
 class SendBody(BaseModel):
     to: str = Field(description="JID (…@s.whatsapp.net / …@g.us) or international phone number")
     text: str = Field(min_length=1, max_length=8000)
+    # Scheduling (either one, not both): deliver later instead of now.
+    send_at: int | None = Field(default=None, description="unix ts to deliver at")
+    delay_seconds: int | None = Field(default=None, ge=1)
 
 
 @router.post("/v1/send")
 def send(body: SendBody, auth: AuthContext = Depends(current_auth)) -> JSONResponse:
-    result = services.send_message(auth, body.to, body.text)
-    status = 202 if result["status"] == "pending_approval" else 200
+    result = services.send_message(auth, body.to, body.text,
+                                   send_at=body.send_at, delay_seconds=body.delay_seconds)
+    status = 202 if result["status"] in ("pending_approval", "scheduled") else 200
     return JSONResponse(status_code=status, content=result)

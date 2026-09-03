@@ -129,9 +129,14 @@ def _keyboard(t: str, item_id: str) -> dict:
 
 def _draft_text(d: dict) -> str:
     note = f"\n📝 {_esc(d['note'])}" if d.get("note") else ""
+    when = ""
+    if d.get("send_at"):
+        # UTC, explicitly labeled — the operator's phone may be in any zone.
+        stamp = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(d["send_at"]))
+        when = f"\n🕒 Scheduled for {stamp}"
     return (f"🟡 <b>Approve WhatsApp message?</b>\n"
             f"Key: <code>{_esc(d.get('key_name'))}</code>\n"
-            f"To: <code>{_esc(d['to_jid'])}</code>\n\n{_esc(d['body'])[:3500]}{note}")
+            f"To: <code>{_esc(d['to_jid'])}</code>{when}\n\n{_esc(d['body'])[:3500]}{note}")
 
 
 def _describe_grant(g: dict) -> str:
@@ -157,7 +162,8 @@ def _grant_text(g: dict) -> str:
 
 def _outcome_text(t: str, status: str) -> str:
     label = "Message" if t == "d" else "Permission"
-    icon = {"sent": "✅", "approved": "✅", "rejected": "❌", "revoked": "❌"}.get(status, "•")
+    icon = {"sent": "✅", "approved": "✅", "rejected": "❌", "revoked": "❌",
+            "scheduled": "🕒"}.get(status, "•")
     return f"{icon} <b>{label} {status}</b>"
 
 

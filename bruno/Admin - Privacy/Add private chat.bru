@@ -1,0 +1,30 @@
+meta {
+  name: Add private chat
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/v1/admin/privacy/chats
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{adminToken}}
+}
+
+body:json {
+  {
+    "jid": "+15551234567",
+    "reason": "personal"
+  }
+}
+
+assert {
+  res.status: eq 201
+}
+
+docs {
+  jid accepts a full JID or an international phone number (normalized on save). Idempotent: re-adding updates the reason.
+}

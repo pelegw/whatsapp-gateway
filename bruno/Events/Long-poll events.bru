@@ -1,0 +1,29 @@
+meta {
+  name: Long-poll events
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/v1/events?cursor={{eventsCursor}}&wait=25&limit=100
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{agentKey}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+script:post-response {
+  if (res.getStatus() === 200) {
+    bru.setEnvVar('eventsCursor', res.getBody().cursor);
+  }
+}
+
+docs {
+  Blocks up to wait=25s and returns the moment a new (visible, fresh) message arrives; otherwise returns empty at the deadline. Advances {{eventsCursor}} either way. Send yourself a WhatsApp message while this is in flight to see it pop.
+}

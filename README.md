@@ -16,6 +16,11 @@ this gateway, and the gateway decides what each one may do:
   each request yourself.
 - **Draft + approval queue** — a read-draft key's messages become drafts that
   *you* approve (web console or Telegram) before they're sent.
+- **Chat privacy** — mark chats private and no agent can see them at all; each
+  key can also get its own read blocklist/allowlist.
+- **Scheduled sends** — "approve now, deliver at 9am"; cancellable until it fires.
+- **Events feed** — agents can watch for new incoming messages (long-poll) and
+  react, with replies still going through the approval machinery.
 - **Rate limits** — per-key per-minute and a global daily cap, drafts included.
 - **Full audit log** — every read and every send attempt, per agent.
 
@@ -179,6 +184,48 @@ an active grant *supplements* the key's role — so even a read-only key can be
 granted send-to-X — and the policy engine honors it at send time. Manage grants
 under `/v1/admin/grants` (list / approve / reject / revoke).
 
+### Events feed (react to new messages)
+
+Agents don't have to poll chats: `GET /v1/events` (no cursor) returns a starting
+cursor "from now"; `GET /v1/events?cursor=N&wait=25` then **long-polls** — it
+blocks up to `wait` seconds and returns the moment a new message arrives, with a
+new cursor to pass next time. The MCP tool `check_new_messages` is the same feed
+without blocking (MCP hosts have short tool timeouts). Privacy filtering applies
+to events exactly as to reads. One deliberate trade-off: a message whose
+timestamp is older than `EVENTS_FRESHNESS_SECONDS` (default 300) — e.g. a
+history-sync replay after a reconnect — never appears as an *event*, though it's
+still readable via the normal endpoints.
+
+### Scheduled sends
+
+Add `send_at` (unix ts) or `delay_seconds` to `/v1/send` or `/v1/drafts` (or the
+matching MCP tools). A send-capable key gets `202 {"status":"scheduled"}` and the
+gateway delivers at that time; a drafting key's schedule rides on the draft — you
+approve it now (card shows the delivery time) and it fires at `send_at`. Until it
+fires it's cancellable by the agent (`DELETE /v1/drafts/{id}`, `cancel_draft`) or
+by you (`/admin` → Scheduled sends → Cancel). Scheduled deliveries respect the
+same rate limits as live sends, so a big batch scheduled for one instant trickles
+out at the key's normal rate over the next minutes rather than blasting.
+Validation: at least `SCHEDULE_MIN_LEAD_SECONDS` (30s) out, at most
+`SCHEDULE_MAX_HORIZON_DAYS` (30d).
+
+### Chat privacy (hide chats from agents)
+
+Two layers, enforced inside every read query (lists, single chat, messages,
+search, media, events):
+
+- **Global private list** — `/admin` → **Chat privacy** (or
+  `/v1/admin/privacy/chats`): chats here are invisible to *every* agent key. A
+  hidden chat is indistinguishable from a nonexistent one (404 / absent), so
+  existence doesn't leak.
+- **Per-key restrictions** — on the key itself: `read_blocklist` (never these
+  chats) and `read_allowlist` (only these chats), set at creation or via
+  `PATCH /v1/admin/keys/{id}`.
+
+Deliberate v1 caveat: **contacts are not filtered** — they're the name→JID
+resolver agents need for sending, so a private chat's contact *name* is still
+discoverable via contact search; only the conversation is hidden.
+
 ## REST API (agents)
 
 `Authorization: Bearer wagw_...` on every call.
@@ -190,15 +237,18 @@ under `/v1/admin/grants` (list / approve / reject / revoke).
 | `GET /v1/messages/search?q=&chat_jid=` | search the archive |
 | `GET /v1/contacts?q=` | contacts + JIDs |
 | `GET /v1/media/{chat_jid}/{message_id}` | download media of an archived message |
-| `POST /v1/send {to, text}` | 200 sent · 202 pending_approval · 403/429 denied |
-| `POST /v1/drafts` / `GET /v1/drafts` / `DELETE /v1/drafts/{id}` | explicit drafts |
+| `GET /v1/events?cursor=&wait=&limit=` | new-message feed; `wait` long-polls |
+| `POST /v1/send {to, text, send_at?\|delay_seconds?}` | 200 sent · 202 pending_approval / scheduled · 403/429 denied |
+| `POST /v1/drafts` / `GET /v1/drafts` / `DELETE /v1/drafts/{id}` | explicit drafts (cancel works while pending or scheduled) |
 | `POST /v1/permissions/request` / `GET /v1/permissions[/{id}]` | request/track a scoped grant |
 | `GET /v1/health` | no auth; gateway/sidecar/link status |
 
 Admin endpoints (`Authorization: Bearer <ADMIN_TOKEN>`): `/v1/admin/keys`,
-`/v1/admin/drafts` + `/approve|/reject`, `/v1/admin/grants` +
-`/approve|/reject|/revoke`, `/v1/admin/telegram` (status/link/enable/test/unlink),
-`/v1/admin/audit`, `/v1/admin/status`, `/v1/admin/qr`. Interactive docs at `/docs`.
+`/v1/admin/drafts` + `/approve|/reject|/cancel` (cancel = a scheduled send),
+`/v1/admin/grants` + `/approve|/reject|/revoke`, `/v1/admin/privacy/chats`
+(list/add/remove the global private list), `/v1/admin/telegram`
+(status/link/enable/test/unlink), `/v1/admin/audit`, `/v1/admin/status`,
+`/v1/admin/qr`. Interactive docs at `/docs`.
 
 ## Runbooks
 

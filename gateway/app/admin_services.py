@@ -7,7 +7,7 @@ never by agents, and deliberately not exposed as MCP tools.
 import json
 import time
 
-from . import audit, auth, db, grants, policy, sidecar
+from . import audit, auth, db, grants, policy, privacy, sidecar
 from .auth import AuthContext
 from .policy import PolicyError
 
@@ -27,55 +27,41 @@ def list_drafts(status: str | None = None, limit: int = 100) -> list[dict]:
         return [dict(r) for r in conn.execute(sql, params).fetchall()]
 
 
-def _claim(draft_id: str, new_status: str, now: int) -> bool:
-    """Atomically move a pending draft to new_status. The WHERE status='pending'
-    guard is the whole point: two concurrent decisions can both observe
-    'pending', but only one UPDATE wins — the loser sees rowcount 0. FastAPI
-    runs sync endpoints on a threadpool, so this race is real even with a
-    single uvicorn worker."""
+def _claim(draft_id: str, new_status: str, now: int, from_status: str = "pending") -> bool:
+    """Atomically move a draft from from_status to new_status. The WHERE guard
+    is the whole point: two concurrent decisions (console click vs Telegram tap,
+    or a scheduler tick vs a cancel) can both observe the old status, but only
+    one UPDATE wins — the loser sees rowcount 0. FastAPI runs sync endpoints on
+    a threadpool, so this race is real even with a single uvicorn worker."""
     with db.connect() as conn:
         cur = conn.execute(
-            "UPDATE drafts SET status = ?, decided_at = ? WHERE id = ? AND status = 'pending'",
-            (new_status, now, draft_id))
+            "UPDATE drafts SET status = ?, decided_at = ? WHERE id = ? AND status = ?",
+            (new_status, now, draft_id, from_status))
         return cur.rowcount == 1
 
 
-def _conflict(draft_id: str) -> PolicyError:
+def _conflict(draft_id: str, expected: str = "pending") -> PolicyError:
     with db.connect() as conn:
         row = conn.execute("SELECT status FROM drafts WHERE id = ?", (draft_id,)).fetchone()
     if row is None:
         return PolicyError(404, "no such draft")
-    return PolicyError(409, f"draft is {row['status']!r}, not pending")
+    return PolicyError(409, f"draft is {row['status']!r}, not {expected}")
 
 
-def decide_draft(draft_id: str, approve: bool) -> dict:
-    """Reject, or approve-and-actually-send. Approval still counts against the
-    key's per-minute rate and the global daily cap — a human clicking fast
-    should not become a spam channel."""
-    from .services import _sweep_expired
-    _sweep_expired()
-    now = int(time.time())
-
-    if not approve:
-        if not _claim(draft_id, "rejected", now):
-            raise _conflict(draft_id)
-        with db.connect() as conn:
-            row = conn.execute("SELECT d.*, k.name AS key_name FROM drafts d"
-                               " JOIN api_keys k ON k.id = d.key_id WHERE d.id = ?",
-                               (draft_id,)).fetchone()
-        audit.audit("admin", "draft.rejected", resource=draft_id,
-                    detail={"key": row["key_name"], "to": row["to_jid"]})
-        return {"id": draft_id, "status": "rejected"}
-
-    # Claim first ('sending'), send second: a concurrent approval or a racing
-    # cancel/reject can never double-send or be silently overridden.
-    if not _claim(draft_id, "sending", now):
-        raise _conflict(draft_id)
+def _fetch_draft_row(draft_id: str):
     with db.connect() as conn:
-        row = conn.execute(
+        return conn.execute(
             "SELECT d.*, k.name AS key_name, k.rate_per_min FROM drafts d"
             " JOIN api_keys k ON k.id = d.key_id WHERE d.id = ?",
             (draft_id,)).fetchone()
+
+
+def _deliver_claimed(draft_id: str, row, release_status: str, actor: str) -> dict:
+    """Deliver a draft already claimed into 'sending'. Retryable failures (rate
+    limit, sidecar 503) release the row back to release_status — 'pending' when
+    a human approved it, 'scheduled' when the scheduler fired it — so the send
+    is retried later instead of lost."""
+    now = int(time.time())
 
     def release(status: str) -> None:
         with db.connect() as conn:
@@ -85,32 +71,75 @@ def decide_draft(draft_id: str, approve: bool) -> dict:
     key_ctx = AuthContext(key_id=row["key_id"], name=row["key_name"],
                           rate_per_min=row["rate_per_min"])
     try:
-        policy.enforce_rate_limits(key_ctx, "admin")
+        policy.enforce_rate_limits(key_ctx, actor)
     except PolicyError:
-        release("pending")  # rate limited now ≠ bad draft; retry later
+        release(release_status)  # rate limited now ≠ bad draft; retry later
         raise
     try:
         res = sidecar.send_text(row["to_jid"], row["body"])
     except sidecar.SidecarError as e:
         if e.status == 503:
             # Sidecar down or WhatsApp not linked: transient. Keep the draft
-            # approvable instead of terminally failing it.
-            release("pending")
-            audit.audit("admin", "send.deferred", resource=row["to_jid"],
+            # retryable instead of terminally failing it.
+            release(release_status)
+            audit.audit(actor, "send.deferred", resource=row["to_jid"],
                         detail={"draft_id": draft_id, "error": str(e)}, result="error")
         else:
             release("failed")
-            audit.audit("admin", "send.failed", resource=row["to_jid"],
+            audit.audit(actor, "send.failed", resource=row["to_jid"],
                         detail={"draft_id": draft_id, "error": str(e)}, result="error")
         raise
     with db.connect() as conn:
         conn.execute(
             "UPDATE drafts SET status = 'sent', decided_at = ?, sent_message_id = ? WHERE id = ?",
             (now, res.get("message_id"), draft_id))
-    audit.audit("admin", "send.sent", resource=row["to_jid"],
+    audit.audit(actor, "send.sent", resource=row["to_jid"],
                 detail={"draft_id": draft_id, "on_behalf_of": row["key_name"],
                         "message_id": res.get("message_id")})
     return {"id": draft_id, "status": "sent", "message_id": res.get("message_id")}
+
+
+def decide_draft(draft_id: str, approve: bool) -> dict:
+    """Reject, or approve. Approving a draft with a future send_at parks it as
+    'scheduled' (the scheduler delivers at time); otherwise it sends now.
+    Delivery still counts against the key's per-minute rate and the global
+    daily cap — a human clicking fast should not become a spam channel."""
+    from .services import _sweep_expired
+    _sweep_expired()
+    now = int(time.time())
+
+    if not approve:
+        if not _claim(draft_id, "rejected", now):
+            raise _conflict(draft_id)
+        row = _fetch_draft_row(draft_id)
+        audit.audit("admin", "draft.rejected", resource=draft_id,
+                    detail={"key": row["key_name"], "to": row["to_jid"]})
+        return {"id": draft_id, "status": "rejected"}
+
+    # A scheduled draft is approved into 'scheduled', not sent: the human's
+    # decision is captured now, the delivery happens at send_at.
+    row = _fetch_draft_row(draft_id)
+    if row is not None and row["send_at"] and row["send_at"] > now:
+        if not _claim(draft_id, "scheduled", now):
+            raise _conflict(draft_id)
+        audit.audit("admin", "draft.scheduled", resource=row["to_jid"],
+                    detail={"draft_id": draft_id, "send_at": row["send_at"]})
+        return {"id": draft_id, "status": "scheduled", "send_at": row["send_at"]}
+
+    # Claim first ('sending'), send second: a concurrent approval or a racing
+    # cancel/reject can never double-send or be silently overridden.
+    if not _claim(draft_id, "sending", now):
+        raise _conflict(draft_id)
+    return _deliver_claimed(draft_id, _fetch_draft_row(draft_id),
+                            release_status="pending", actor="admin")
+
+
+def cancel_scheduled(draft_id: str) -> dict:
+    """Admin cancel of a not-yet-fired scheduled send."""
+    if not _claim(draft_id, "canceled", int(time.time()), from_status="scheduled"):
+        raise _conflict(draft_id, expected="scheduled")
+    audit.audit("admin", "draft.canceled", resource=draft_id)
+    return {"id": draft_id, "status": "canceled"}
 
 
 # ---------------------------------------------------------------- permission grants
@@ -167,11 +196,35 @@ def revoke_grant(grant_id: str) -> dict:
     return {"id": grant_id, "status": "revoked"}
 
 
+# ---------------------------------------------------------------- chat privacy
+
+def list_private_chats() -> list[dict]:
+    return privacy.list_global()
+
+
+def add_private_chat(jid: str, reason: str = "") -> dict:
+    normalized = policy.normalize_jid(jid)
+    privacy.add_global(normalized, reason)
+    audit.audit("admin", "privacy.chat_added", resource=normalized,
+                detail={"reason": reason})
+    return {"jid": normalized, "reason": reason}
+
+
+def remove_private_chat(jid: str) -> dict:
+    normalized = policy.normalize_jid(jid)
+    if not privacy.remove_global(normalized):
+        raise PolicyError(404, "that chat is not on the private list")
+    audit.audit("admin", "privacy.chat_removed", resource=normalized)
+    return {"jid": normalized, "removed": True}
+
+
 def create_key(name: str, role: str = auth.ROLE_READ,
                allowlist: list[str] | None = None,
                scopes: list[str] | None = None,
                rate_per_min: int | None = None,
-               expires_in_days: int | None = None) -> dict:
+               expires_in_days: int | None = None,
+               read_blocklist: list[str] | None = None,
+               read_allowlist: list[str] | None = None) -> dict:
     """Create an agent API key with a role (read-only default, read-draft, or
     read-send). Allowlist entries are normalized so they match exactly what the
     policy engine compares at send time; for a read-send key the allowlist
@@ -179,17 +232,22 @@ def create_key(name: str, role: str = auth.ROLE_READ,
     expires_in_days to make the key stop working after a set lifetime."""
     from .config import get_settings
     normalized = [policy.normalize_jid(a) for a in (allowlist or [])]
+    read_block = [policy.normalize_jid(a) for a in (read_blocklist or [])]
+    read_allow = [policy.normalize_jid(a) for a in (read_allowlist or [])]
     rate = rate_per_min or get_settings().default_rate_per_min
     expires_at = int(time.time()) + expires_in_days * 86400 if expires_in_days else None
     try:
         plaintext = auth.create_key(name, normalized, rate, role=role,
-                                    scopes=scopes, expires_at=expires_at)
+                                    scopes=scopes, expires_at=expires_at,
+                                    read_blocklist=read_block,
+                                    read_allowlist=read_allow)
     except ValueError as e:
         raise PolicyError(400, str(e))
     effective_role = role if scopes is None else auth.role_from_scopes(scopes)
     audit.audit("admin", "key.created", resource=name,
                 detail={"role": effective_role, "allowlist": normalized,
-                        "rate_per_min": rate, "expires_at": expires_at})
+                        "rate_per_min": rate, "expires_at": expires_at,
+                        "read_blocklist": read_block, "read_allowlist": read_allow})
     return {"name": name, "key": plaintext, "role": effective_role,
             "expires_at": expires_at,
             "note": "store this key now — it is never shown again"}
@@ -215,6 +273,7 @@ def list_keys() -> list[dict]:
         rows = conn.execute(
             "SELECT id, name, role, scopes, send_allowlist, rate_per_min, disabled,"
             " created_at, expires_at, last_used_at, last_used_ip,"
+            " read_blocklist, read_allowlist,"
             " (prev_key_hash IS NOT NULL AND prev_expires_at > strftime('%s','now')) AS rotating"
             " FROM api_keys ORDER BY id").fetchall()
     out = []
@@ -222,6 +281,8 @@ def list_keys() -> list[dict]:
         d = dict(r)
         d["scopes"] = json.loads(d["scopes"])
         d["send_allowlist"] = json.loads(d["send_allowlist"])
+        d["read_blocklist"] = json.loads(d["read_blocklist"] or "[]")
+        d["read_allowlist"] = json.loads(d["read_allowlist"] or "[]")
         d["rotating"] = bool(d["rotating"])
         d["role"] = d["role"] or auth.role_from_scopes(d["scopes"])
         out.append(d)
@@ -232,7 +293,9 @@ def update_key(key_id: int, role: str | None = None,
                scopes: list[str] | None = None,
                allowlist: list[str] | None = None,
                rate_per_min: int | None = None,
-               disabled: bool | None = None) -> dict:
+               disabled: bool | None = None,
+               read_blocklist: list[str] | None = None,
+               read_allowlist: list[str] | None = None) -> dict:
     sets, params, detail = [], [], {}
     if role is not None:
         # Changing role re-derives the scope set so the two never drift.
@@ -259,6 +322,16 @@ def update_key(key_id: int, role: str | None = None,
         sets.append("send_allowlist = ?")
         params.append(json.dumps(normalized))
         detail["allowlist"] = normalized
+    if read_blocklist is not None:
+        normalized = [policy.normalize_jid(a) for a in read_blocklist]
+        sets.append("read_blocklist = ?")
+        params.append(json.dumps(normalized))
+        detail["read_blocklist"] = normalized
+    if read_allowlist is not None:
+        normalized = [policy.normalize_jid(a) for a in read_allowlist]
+        sets.append("read_allowlist = ?")
+        params.append(json.dumps(normalized))
+        detail["read_allowlist"] = normalized
     if rate_per_min is not None:
         sets.append("rate_per_min = ?")
         params.append(rate_per_min)

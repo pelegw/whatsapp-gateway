@@ -63,6 +63,12 @@ CREATE TABLE IF NOT EXISTS app_config (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+-- Chats NO agent key may read (global privacy list, managed from /admin).
+CREATE TABLE IF NOT EXISTS private_chats (
+    jid        TEXT PRIMARY KEY,
+    reason     TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts);
 CREATE INDEX IF NOT EXISTS idx_drafts_status ON drafts(status);
 CREATE INDEX IF NOT EXISTS idx_grants_status ON grants(status);
@@ -88,6 +94,14 @@ _MIGRATIONS = {
         "last_used_at": "INTEGER",
         "last_used_ip": "TEXT",
         "role": "TEXT",   # read-only | read-draft | read-send; backfilled below
+        # Per-key read privacy (JSON JID arrays), on top of the global
+        # private_chats list. Blocklist hides chats; a non-empty allowlist
+        # restricts reads to exactly those chats.
+        "read_blocklist": "TEXT NOT NULL DEFAULT '[]'",
+        "read_allowlist": "TEXT NOT NULL DEFAULT '[]'",
+    },
+    "drafts": {
+        "send_at": "INTEGER",   # NULL = send on approval (unscheduled)
     },
 }
 

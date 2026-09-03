@@ -1,0 +1,19 @@
+meta {
+  name: Remove private chat
+  type: http
+  seq: 3
+}
+
+delete {
+  url: {{baseUrl}}/v1/admin/privacy/chats/15551234567@s.whatsapp.net
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{adminToken}}
+}
+
+docs {
+  Path takes the normalized JID (as returned by the list). 404 if not on the list.
+}

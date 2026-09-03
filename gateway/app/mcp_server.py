@@ -79,6 +79,18 @@ async def search_messages(query: str, chat_jid: str = "", limit: int = 20) -> st
 
 
 @mcp.tool()
+async def check_new_messages(cursor: int | None = None, limit: int = 50) -> str:
+    """Non-blocking check for new incoming messages. First call: omit cursor to
+    get a starting point (returns {"cursor": N, "events": []} — no backlog).
+    Later calls: pass the last cursor you got back; new messages since it are
+    returned and the cursor advances. Returns immediately even when there is
+    nothing new — check again between other actions rather than expecting a
+    push. (Clients that can wait should use REST GET /v1/events?wait=N, which
+    long-polls; a blocking MCP tool would trip host tool-call timeouts.)"""
+    return await _run(services.list_events, _auth(), cursor, limit)
+
+
+@mcp.tool()
 async def search_contacts(query: str) -> str:
     """Find contacts by name or phone fragment; returns their JIDs for use as
     send/read targets."""
@@ -86,26 +98,36 @@ async def search_contacts(query: str) -> str:
 
 
 @mcp.tool()
-async def send_message(to: str, text: str) -> str:
+async def send_message(to: str, text: str, send_at: int | None = None,
+                       delay_seconds: int | None = None) -> str:
     """Send a WhatsApp message. 'to' is a JID or international phone number.
     Result status 'sent' means delivered to WhatsApp. Status 'pending_approval'
     is NORMAL, not an error: the recipient is outside this key's allowlist, so
     the message became a draft the human must approve; check it later with
-    get_draft_status."""
-    return await _run(services.send_message, _auth(), to, text)
+    get_draft_status. To deliver LATER, pass send_at (unix ts) or delay_seconds
+    (not both): status 'scheduled' means it will fire at that time — cancel it
+    with cancel_draft until then."""
+    return await _run(services.send_message, _auth(), to, text,
+                      send_at=send_at, delay_seconds=delay_seconds)
 
 
 @mcp.tool()
-async def create_draft(to: str, text: str, note: str = "") -> str:
+async def create_draft(to: str, text: str, note: str = "",
+                       send_at: int | None = None,
+                       delay_seconds: int | None = None) -> str:
     """Queue a message for explicit human approval (even for allowlisted
-    recipients). Use note to tell the human why you wrote it."""
-    return await _run(services.create_draft, _auth(), to, text, note)
+    recipients). Use note to tell the human why you wrote it. Pass send_at
+    (unix ts) or delay_seconds to propose a delivery time — if approved, it
+    sends at that time instead of immediately."""
+    return await _run(services.create_draft, _auth(), to, text, note,
+                      send_at=send_at, delay_seconds=delay_seconds)
 
 
 @mcp.tool()
 async def get_draft_status(draft_id: str) -> str:
-    """Check one draft. Status is one of: pending, sending (approved, delivery
-    in flight), sent, rejected, expired, canceled, or failed."""
+    """Check one draft. Status is one of: pending, scheduled (approved, fires
+    at send_at), sending (delivery in flight), sent, rejected, expired,
+    canceled, or failed."""
     return await _run(services.get_draft, _auth(), draft_id)
 
 
@@ -113,6 +135,13 @@ async def get_draft_status(draft_id: str) -> str:
 async def list_my_drafts() -> str:
     """List this key's drafts and their statuses, newest first."""
     return await _run(services.list_my_drafts, _auth())
+
+
+@mcp.tool()
+async def cancel_draft(draft_id: str) -> str:
+    """Cancel one of this key's own drafts while it is still pending approval
+    or scheduled (not yet delivered). Already-sent messages cannot be recalled."""
+    return await _run(services.cancel_draft, _auth(), draft_id)
 
 
 @mcp.tool()

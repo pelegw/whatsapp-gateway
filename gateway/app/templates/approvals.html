@@ -139,11 +139,35 @@
     <div id="draftList"></div>
   </section>
 
+  <section id="scheduledSection">
+    <div class="sec-head">
+      <h2>Scheduled sends</h2><span class="count" id="schedCount"></span>
+    </div>
+    <div id="schedList"></div>
+  </section>
+
   <section id="permsSection">
     <div class="sec-head">
       <h2>Pending permissions</h2><span class="count" id="permCount"></span>
     </div>
     <div id="permList"></div>
+  </section>
+
+  <section id="privacySection">
+    <div class="sec-head"><h2>Chat privacy</h2><span class="count" id="privCount"></span></div>
+    <div class="card">
+      <div class="hint" style="margin-bottom:.7rem">
+        Chats on this list are invisible to <b>every</b> agent key — chat lists,
+        messages, search, media, and the events feed. (Per-key read restrictions
+        are set on the key itself.)
+      </div>
+      <form class="newkey" id="privForm">
+        <label>Chat JID or phone<input name="jid" required placeholder="9725…@s.whatsapp.net or +9725…"></label>
+        <label>Reason<input name="reason" placeholder="optional" maxlength="200"></label>
+        <button class="primary" type="submit">Make private</button>
+      </form>
+      <div id="privList" style="margin-top:.7rem"></div>
+    </div>
   </section>
 
   <section id="keysSection">
@@ -165,6 +189,8 @@
           </select>
         </label>
         <label>Auto-send to<input name="allowlist" placeholder="optional, comma-separated"></label>
+        <label>Never read<input name="readblock" placeholder="optional, comma-separated"></label>
+        <label>Only read<input name="readallow" placeholder="optional, comma-separated"></label>
         <label>Expires (days)<input name="expires" type="number" min="1" max="3650" placeholder="never"></label>
         <button class="primary" type="submit">Create</button>
         <div class="rolehelp" id="roleHelp"></div>
@@ -174,7 +200,7 @@
     <div class="card table-wrap">
       <table>
         <thead><tr>
-          <th>Name</th><th>Role</th><th>Auto-send</th><th>Last used</th><th>Expires</th><th></th>
+          <th>Name</th><th>Role</th><th>Auto-send</th><th>Read privacy</th><th>Last used</th><th>Expires</th><th></th>
         </tr></thead>
         <tbody id="keyRows"></tbody>
       </table>
@@ -242,16 +268,74 @@ async function refreshDrafts() {
     const card = el("div", "card draft");
     const meta = el("div", "meta");
     meta.append(el("span", null, d.key_name), el("span", null, "→"), el("span", "to", d.to_jid), el("span", null, "· " + ago(d.created_at)));
+    if (d.send_at) meta.append(el("span", null, "· 🕒 sends " + fmtWhen(d.send_at)));
     card.append(meta, el("div", "body", d.body));
     if (d.note) card.append(el("div", "note", d.note));
     const actions = el("div", "actions");
-    const approve = el("button", "green", "Approve & send");
+    const approve = el("button", "green", d.send_at ? "Approve (sends later)" : "Approve & send");
     const reject = el("button", "red", "Reject");
     approve.onclick = () => decide(d.id, "approve", approve, reject);
     reject.onclick = () => decide(d.id, "reject", approve, reject);
     actions.append(approve, reject); card.append(actions); list.append(card);
   }
 }
+const fmtWhen = (ts) => new Date(ts * 1000).toLocaleString();
+
+// ---- scheduled sends --------------------------------------------------------
+async function refreshScheduled() {
+  const items = await api("/v1/admin/drafts?status=scheduled");
+  $("schedCount").textContent = items.length ? `${items.length} queued` : "";
+  const list = $("schedList"); list.replaceChildren();
+  if (!items.length) { list.append(el("div", "empty", "No scheduled sends.")); return; }
+  for (const d of items) {
+    const card = el("div", "card draft");
+    const meta = el("div", "meta");
+    meta.append(el("span", null, d.key_name), el("span", null, "→"), el("span", "to", d.to_jid),
+                el("span", null, "· 🕒 " + fmtWhen(d.send_at)));
+    card.append(meta, el("div", "body", d.body));
+    const actions = el("div", "actions");
+    const cancel = el("button", "red", "Cancel");
+    cancel.onclick = async () => {
+      cancel.disabled = true; showErr();
+      try { await api(`/v1/admin/drafts/${d.id}/cancel`, { method: "POST" }); }
+      catch (e) { showErr(e); cancel.disabled = false; }
+      refreshScheduled();
+    };
+    actions.append(cancel); card.append(actions); list.append(card);
+  }
+}
+
+// ---- chat privacy -----------------------------------------------------------
+async function refreshPrivacy() {
+  const chats = await api("/v1/admin/privacy/chats");
+  $("privCount").textContent = chats.length ? `${chats.length} private` : "";
+  const list = $("privList"); list.replaceChildren();
+  if (!chats.length) { list.append(el("div", "empty", "No private chats.")); return; }
+  for (const c of chats) {
+    const row = el("div", "meta");
+    row.style.cssText = "display:flex;align-items:center;gap:.6rem;padding:.35rem 0;border-bottom:1px solid var(--line)";
+    row.append(el("span", "to", c.jid));
+    if (c.reason) row.append(el("span", null, "· " + c.reason));
+    const rm = el("button", "ghost", "Remove"); rm.style.marginLeft = "auto";
+    rm.onclick = async () => {
+      rm.disabled = true; showErr();
+      try { await api(`/v1/admin/privacy/chats/${encodeURIComponent(c.jid)}`, { method: "DELETE" }); }
+      catch (e) { showErr(e); rm.disabled = false; }
+      refreshPrivacy();
+    };
+    row.append(rm); list.append(row);
+  }
+}
+$("privForm").onsubmit = async (e) => {
+  e.preventDefault(); showErr();
+  const f = e.target;
+  try {
+    await api("/v1/admin/privacy/chats", { method: "POST",
+      body: JSON.stringify({ jid: f.jid.value.trim(), reason: f.reason.value.trim() }) });
+    f.reset();
+  } catch (e) { showErr(e); }
+  refreshPrivacy();
+};
 async function decide(id, action, ...btns) {
   btns.forEach(b => b.disabled = true); showErr();
   try { await api(`/v1/admin/drafts/${id}/${action}`, { method: "POST" }); }
@@ -278,6 +362,10 @@ async function refreshKeys() {
     roleTd.append(el("span", "badge " + (k.disabled ? "off" : k.role), k.disabled ? "disabled" : k.role));
     tr.append(roleTd);
     tr.append(el("td", null, k.send_allowlist && k.send_allowlist.length ? k.send_allowlist.join(", ") : (k.role === "read-send" ? "anyone" : "—")));
+    const privParts = [];
+    if (k.read_allowlist && k.read_allowlist.length) privParts.push("only " + k.read_allowlist.length + " chat" + (k.read_allowlist.length > 1 ? "s" : ""));
+    if (k.read_blocklist && k.read_blocklist.length) privParts.push("blocks " + k.read_blocklist.length);
+    tr.append(el("td", null, privParts.length ? privParts.join(", ") : "—"));
     const usedTd = el("td");
     usedTd.append(el("div", null, k.last_used_at ? ago(k.last_used_at) : "never"));
     if (k.last_used_ip) usedTd.append(el("div", "sub", k.last_used_ip));
@@ -321,8 +409,13 @@ $("newKeyForm").onsubmit = async (e) => {
   e.preventDefault(); showErr();
   const f = e.target;
   const body = { name: f.name.value.trim(), role: f.role.value };
-  const allow = f.allowlist.value.split(",").map(s => s.trim()).filter(Boolean);
+  const csv = (v) => v.split(",").map(s => s.trim()).filter(Boolean);
+  const allow = csv(f.allowlist.value);
   if (allow.length) body.allowlist = allow;
+  const readBlock = csv(f.readblock.value);
+  if (readBlock.length) body.read_blocklist = readBlock;
+  const readAllow = csv(f.readallow.value);
+  if (readAllow.length) body.read_allowlist = readAllow;
   if (f.expires.value) body.expires_in_days = Number(f.expires.value);
   try {
     const r = await api("/v1/admin/keys", { method: "POST", body: JSON.stringify(body) });
@@ -346,7 +439,7 @@ async function refreshTelegram() {
   const bot = t.bot_username ? "@" + t.bot_username : "your bot";
   body.textContent = t.chat_linked
     ? `Linked to chat ${t.chat_id}. Approvals ${t.enabled ? "are being sent here." : "are paused (not enabled)."}`
-    : `Click “Link my chat”, message ${bot} on Telegram, then it links automatically.`;
+    : `Click “Link my chat” — you'll get a one-time code to send to ${bot} from your private Telegram chat.`;
   const btn = (label, cls, fn) => { const b = el("button", cls, label); b.onclick = fn; acts.append(b); };
   if (!t.chat_linked) btn("Link my chat", "primary", tgLink);
   else {
@@ -403,7 +496,7 @@ async function decideGrant(id, action, ...btns) {
 // ---- boot + poll ------------------------------------------------------------
 async function refreshAll() {
   showErr();
-  try { await Promise.all([refreshStatus(), refreshDrafts(), refreshKeys(), refreshTelegram(), refreshGrants()]); }
+  try { await Promise.all([refreshStatus(), refreshDrafts(), refreshScheduled(), refreshKeys(), refreshTelegram(), refreshGrants(), refreshPrivacy()]); }
   catch (e) { showErr(e); }
 }
 $("refreshBtn").onclick = refreshAll;
@@ -417,6 +510,7 @@ refreshAll();
 setInterval(() => {
   refreshStatus().catch(() => {});
   refreshDrafts().catch(() => {});
+  refreshScheduled().catch(() => {});
   refreshGrants().catch(() => {});
   refreshTelegram().catch(() => {});
 }, 15000);

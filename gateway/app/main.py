@@ -11,13 +11,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from . import db
+from . import db, scheduler
 from .config import get_settings, validate_exposure
 from .mcp_server import MCPAuthMiddleware, mcp
 from .origin import OriginGuardMiddleware
 from .policy import PolicyError
-from .routers import (admin, chats, contacts, drafts, health, media, messages,
-                      permissions, send, skill)
+from .routers import (admin, chats, contacts, drafts, events, health, media,
+                      messages, permissions, send, skill)
 from .sidecar import SidecarError
 
 
@@ -34,16 +34,20 @@ async def lifespan(app: FastAPI):
     if get_settings().telegram_bot_token:
         from .notify import telegram
         poll_task = asyncio.create_task(telegram.poll_loop())
+    # Scheduled-send worker: unconditional (no external dependency to gate on).
+    # Tests never run it — they call scheduler._tick() directly.
+    scheduler_task = asyncio.create_task(scheduler.scheduler_loop())
     # The MCP session manager MUST run inside the parent app's lifespan,
     # otherwise /mcp requests die with "Task group is not initialized".
     try:
         async with mcp.session_manager.run():
             yield
     finally:
-        if poll_task is not None:
-            poll_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await poll_task
+        for task in (poll_task, scheduler_task):
+            if task is not None:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
 
 
 # In public mode the interactive API docs (which reveal the full surface) are
@@ -58,7 +62,7 @@ api = FastAPI(
 
 for r in (health.router, chats.router, messages.router, contacts.router,
           media.router, send.router, drafts.router, permissions.router,
-          skill.router, admin.router, admin.page_router):
+          events.router, skill.router, admin.router, admin.page_router):
     api.include_router(r)
 
 
