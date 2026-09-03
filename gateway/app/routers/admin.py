@@ -124,6 +124,7 @@ def revoke_grant(grant_id: str) -> dict:
 class PrivateChatBody(BaseModel):
     jid: str = Field(min_length=1)
     reason: str = Field(default="", max_length=200)
+    name: str = Field(default="", max_length=120)   # display-only, from the picker
 
 
 @router.get("/v1/admin/privacy/chats")
@@ -131,9 +132,15 @@ def list_private_chats() -> list[dict]:
     return admin_services.list_private_chats()
 
 
+@router.get("/v1/admin/privacy/resolve")
+def resolve_chats(q: str, limit: int = 20) -> list[dict]:
+    """Name → JID candidates for the picker (chats + contacts, read-only)."""
+    return admin_services.resolve_chats(q, limit)
+
+
 @router.post("/v1/admin/privacy/chats", status_code=201)
 def add_private_chat(body: PrivateChatBody) -> dict:
-    return admin_services.add_private_chat(body.jid, body.reason)
+    return admin_services.add_private_chat(body.jid, body.reason, body.name)
 
 
 @router.delete("/v1/admin/privacy/chats/{jid}")

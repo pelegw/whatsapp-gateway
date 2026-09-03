@@ -20,17 +20,21 @@ from .auth import AuthContext
 def list_global() -> list[dict]:
     with db.connect() as conn:
         rows = conn.execute(
-            "SELECT jid, reason, created_at FROM private_chats ORDER BY created_at DESC"
+            "SELECT jid, name, reason, created_at FROM private_chats ORDER BY created_at DESC"
         ).fetchall()
     return [dict(r) for r in rows]
 
 
-def add_global(jid: str, reason: str = "") -> None:
+def add_global(jid: str, reason: str = "", name: str = "") -> None:
+    # name is display-only, captured by the admin picker at add time. It is
+    # never consulted for enforcement — matching is exact-jid — so a contact or
+    # group member renaming themselves cannot unhide a private chat.
     with db.connect() as conn:
         conn.execute(
-            "INSERT INTO private_chats (jid, reason, created_at) VALUES (?, ?, ?)"
-            " ON CONFLICT(jid) DO UPDATE SET reason = excluded.reason",
-            (jid, reason, int(time.time())),
+            "INSERT INTO private_chats (jid, name, reason, created_at) VALUES (?, ?, ?, ?)"
+            " ON CONFLICT(jid) DO UPDATE SET reason = excluded.reason,"
+            " name = CASE WHEN excluded.name != '' THEN excluded.name ELSE private_chats.name END",
+            (jid, name, reason, int(time.time())),
         )
 
 

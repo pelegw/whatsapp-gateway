@@ -64,8 +64,11 @@ CREATE TABLE IF NOT EXISTS app_config (
     value TEXT NOT NULL
 );
 -- Chats NO agent key may read (global privacy list, managed from /admin).
+-- name is DISPLAY-ONLY (captured by the picker at add time): enforcement is
+-- always by jid, so renaming a chat can never unhide it.
 CREATE TABLE IF NOT EXISTS private_chats (
     jid        TEXT PRIMARY KEY,
+    name       TEXT NOT NULL DEFAULT '',
     reason     TEXT NOT NULL DEFAULT '',
     created_at INTEGER NOT NULL
 );
@@ -102,6 +105,9 @@ _MIGRATIONS = {
     },
     "drafts": {
         "send_at": "INTEGER",   # NULL = send on approval (unscheduled)
+    },
+    "private_chats": {
+        "name": "TEXT NOT NULL DEFAULT ''",   # display-only; enforcement is by jid
     },
 }
 

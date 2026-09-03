@@ -111,6 +111,47 @@ def test_patch_key_read_lists(client, archive):
     assert client.get(f"/v1/chats/{ALICE}", headers=bearer(key)).status_code == 404
 
 
+# ------------------------------------------------------------ name picker
+
+def test_resolve_requires_admin(client, archive, make_key):
+    key = make_key(name="agent", role="read-send")       # even a powerful AGENT key
+    assert client.get("/v1/admin/privacy/resolve?q=fam").status_code in (401, 403)
+    assert client.get("/v1/admin/privacy/resolve?q=fam",
+                      headers=bearer(key)).status_code in (401, 403)
+
+
+def test_resolve_finds_groups_and_contacts(client, archive):
+    r = client.get("/v1/admin/privacy/resolve?q=fam", headers=admin_headers()).json()
+    assert [(m["jid"], m["kind"]) for m in r] == [(GROUP, "group")]
+    # a DM chat and its contact share a jid — deduped, chat wins
+    r = client.get("/v1/admin/privacy/resolve?q=alice", headers=admin_headers()).json()
+    assert [(m["jid"], m["kind"]) for m in r] == [(ALICE, "chat")]
+    # address-book-only match (full_name) surfaces as a contact
+    r = client.get("/v1/admin/privacy/resolve?q=cohen", headers=admin_headers()).json()
+    assert [(m["jid"], m["kind"]) for m in r] == [(ALICE, "contact")]
+    assert client.get("/v1/admin/privacy/resolve?q=", headers=admin_headers()).json() == []
+
+
+def test_rename_cannot_unhide(client, archive, make_key):
+    """Enforcement is by pinned jid: a group member renaming the chat (or a
+    contact changing their push name) must not resurface a private chat."""
+    import os
+    import sqlite3
+    key = make_key(name="reader", role="read-only")
+    client.post("/v1/admin/privacy/chats", json={"jid": GROUP, "name": "Family"},
+                headers=admin_headers())
+    assert client.get(f"/v1/chats/{GROUP}", headers=bearer(key)).status_code == 404
+    conn = sqlite3.connect(os.environ["MESSAGES_DB"])
+    conn.execute("UPDATE chats SET name = 'Totally Different' WHERE jid = ?", (GROUP,))
+    conn.commit(); conn.close()
+    assert client.get(f"/v1/chats/{GROUP}", headers=bearer(key)).status_code == 404
+    assert GROUP not in [c["jid"] for c in
+                         client.get("/v1/chats", headers=bearer(key)).json()]
+    # the stored display name survives for the admin list
+    rows = client.get("/v1/admin/privacy/chats", headers=admin_headers()).json()
+    assert rows[0]["name"] == "Family"
+
+
 # ------------------------------------------------------------ admin CRUD
 
 def test_private_list_crud_and_audit(client, env):

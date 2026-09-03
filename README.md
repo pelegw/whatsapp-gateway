@@ -217,7 +217,13 @@ search, media, events):
 - **Global private list** — `/admin` → **Chat privacy** (or
   `/v1/admin/privacy/chats`): chats here are invisible to *every* agent key. A
   hidden chat is indistinguishable from a nonexistent one (404 / absent), so
-  existence doesn't leak.
+  existence doesn't leak. The console lets you **search by name** ("Family",
+  "Alice") via `GET /v1/admin/privacy/resolve?q=` — but what's *stored and
+  enforced* is the resolved **JID**, pinned at add time. That's deliberate:
+  chat and contact names are controlled by other people (a contact sets their
+  own display name; group members can rename a group), so name-based
+  enforcement would let someone unhide a chat by renaming it. Pinning the JID
+  makes renames irrelevant; the name is kept for display only.
 - **Per-key restrictions** — on the key itself: `read_blocklist` (never these
   chats) and `read_allowlist` (only these chats), set at creation or via
   `PATCH /v1/admin/keys/{id}`.

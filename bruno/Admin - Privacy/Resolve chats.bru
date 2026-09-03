@@ -1,0 +1,19 @@
+meta {
+  name: Resolve chats
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/v1/admin/privacy/resolve?q=family
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{adminToken}}
+}
+
+docs {
+  Name → JID candidates for the privacy picker (searches archive chats + contacts, read-only). Selection only: store/enforce the returned jid, never the name.
+}

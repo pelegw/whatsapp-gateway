@@ -249,14 +249,17 @@
     <!-- ================= Chat privacy ================= -->
     <section class="view" data-view="privacy" hidden>
       <h2>Chat privacy</h2>
-      <p class="viewsub">Chats on this list are invisible to <b>every</b> agent key — lists, messages, search, media, and the events feed. Per-key restrictions live on the key itself (API keys → Edit).</p>
+      <p class="viewsub">Chats on this list are invisible to <b>every</b> agent key — lists, messages, search, media, and the events feed. Search by <b>name</b>; what's stored is the chat's JID, so renaming a chat or contact can never unhide it. Per-key restrictions live on the key itself (API keys → Edit).</p>
       <div class="card">
-        <form class="grid" id="privForm">
-          <label>Chat JID or phone<input name="jid" required placeholder="9725…@s.whatsapp.net or +9725…"></label>
-          <label>Reason<input name="reason" placeholder="optional" maxlength="200"></label>
-          <button class="primary" type="submit">Make private</button>
+        <form class="grid" id="privSearchForm" autocomplete="off">
+          <label>Find a chat or contact<input name="q" id="privQ" placeholder="type a name — e.g. Family — or paste a JID/phone"></label>
+          <label>Reason<input name="reason" id="privReason" placeholder="optional, saved with the entry" maxlength="200"></label>
         </form>
-        <div id="privList" style="margin-top:.7rem"></div>
+        <div id="privResults" style="margin-top:.5rem"></div>
+      </div>
+      <div class="card">
+        <div class="subhead"><h3>Private chats</h3></div>
+        <div id="privList"></div>
       </div>
     </section>
 
@@ -534,7 +537,8 @@ async function refreshPrivacy() {
   if (!chats.length) { list.append(el("div", "empty", "No private chats.")); return; }
   for (const c of chats) {
     const row = el("div", "privrow");
-    row.append(el("span", "jid", c.jid));
+    row.append(el("span", "jid", c.name || c.jid));
+    if (c.name) row.append(el("span", "why", "· " + c.jid));
     if (c.reason) row.append(el("span", "why", "· " + c.reason));
     const rm = el("button", "ghost", "Remove"); rm.style.marginLeft = "auto";
     rm.onclick = async () => {
@@ -546,16 +550,47 @@ async function refreshPrivacy() {
     row.append(rm); list.append(row);
   }
 }
-$("privForm").onsubmit = async (e) => {
-  e.preventDefault(); showErr();
-  const f = e.target;
+
+// Name → JID picker. The resolve endpoint is display/selection only: what gets
+// stored (and enforced) is the pinned jid of the row the human clicks.
+const looksLikeAddress = (q) => q.includes("@") || /^\+?[0-9]{6,20}$/.test(q);
+let privTimer = null;
+$("privQ").oninput = () => { clearTimeout(privTimer); privTimer = setTimeout(privSearch, 250); };
+$("privSearchForm").onsubmit = (e) => { e.preventDefault(); privSearch(); };
+async function privSearch() {
+  const q = $("privQ").value.trim();
+  const box = $("privResults"); box.replaceChildren();
+  if (!q) return;
+  let matches = [];
+  try { matches = await api(`/v1/admin/privacy/resolve?q=${encodeURIComponent(q)}`); }
+  catch (e) { showErr(e); return; }
+  for (const m of matches) {
+    const row = el("div", "privrow");
+    row.append(el("span", "jid", m.name || "(unnamed)"));
+    row.append(el("span", "why", `· ${m.kind} · ${m.jid}`));
+    const add = el("button", "primary", "Make private"); add.style.marginLeft = "auto";
+    add.onclick = () => privAdd(m.jid, m.name || "", add);
+    row.append(add); box.append(row);
+  }
+  if (looksLikeAddress(q)) {
+    const row = el("div", "privrow");
+    row.append(el("span", "jid", q), el("span", "why", "· use exactly as typed"));
+    const add = el("button", "", "Make private"); add.style.marginLeft = "auto";
+    add.onclick = () => privAdd(q, "", add);
+    row.append(add); box.append(row);
+  } else if (!matches.length) {
+    box.append(el("div", "empty", "No chats or contacts match — try another name, or paste a JID/phone."));
+  }
+}
+async function privAdd(jid, name, btn) {
+  btn.disabled = true; showErr();
   try {
     await api("/v1/admin/privacy/chats", { method: "POST",
-      body: JSON.stringify({ jid: f.jid.value.trim(), reason: f.reason.value.trim() }) });
-    f.reset();
-  } catch (e) { showErr(e); }
+      body: JSON.stringify({ jid, name, reason: $("privReason").value.trim() }) });
+    $("privQ").value = ""; $("privResults").replaceChildren();
+  } catch (e) { showErr(e); btn.disabled = false; }
   refreshPrivacy();
-};
+}
 
 // ---- API keys ---------------------------------------------------------------
 const ROLE_HELP = {

@@ -7,7 +7,7 @@ never by agents, and deliberately not exposed as MCP tools.
 import json
 import time
 
-from . import audit, auth, db, grants, policy, privacy, sidecar
+from . import audit, auth, db, grants, policy, privacy, sidecar, wastore
 from .auth import AuthContext
 from .policy import PolicyError
 
@@ -202,12 +202,34 @@ def list_private_chats() -> list[dict]:
     return privacy.list_global()
 
 
-def add_private_chat(jid: str, reason: str = "") -> dict:
+def resolve_chats(q: str, limit: int = 20) -> list[dict]:
+    """Search the archive's chats + contacts by name (or JID/phone fragment)
+    for the admin picker. Display/selection only: what gets STORED and
+    ENFORCED is always the pinned jid — a later rename cannot unhide a chat.
+    Admin-only (this module sits behind require_admin), read-only queries."""
+    q = (q or "").strip()
+    if not q:
+        return []
+    limit = max(1, min(limit, 50))
+    out, seen = [], set()
+    for c in wastore.list_chats(q, limit):
+        out.append({"jid": c["jid"], "name": c["name"],
+                    "kind": "group" if c["is_group"] else "chat"})
+        seen.add(c["jid"])
+    for c in wastore.list_contacts(q, limit):
+        if c["jid"] in seen:
+            continue
+        name = c["full_name"] or c["push_name"] or c["business_name"]
+        out.append({"jid": c["jid"], "name": name, "kind": "contact"})
+    return out[:limit]
+
+
+def add_private_chat(jid: str, reason: str = "", name: str = "") -> dict:
     normalized = policy.normalize_jid(jid)
-    privacy.add_global(normalized, reason)
+    privacy.add_global(normalized, reason, name.strip())
     audit.audit("admin", "privacy.chat_added", resource=normalized,
-                detail={"reason": reason})
-    return {"jid": normalized, "reason": reason}
+                detail={"reason": reason, "name": name.strip()})
+    return {"jid": normalized, "name": name.strip(), "reason": reason}
 
 
 def remove_private_chat(jid: str) -> dict:
