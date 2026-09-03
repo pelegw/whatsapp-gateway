@@ -7,16 +7,16 @@
 <style>
   :root {
     color-scheme: light dark;
-    --bg: #f5f6f8; --panel: #ffffff; --panel-2: #fbfcfd; --ink: #1b1f24;
-    --muted: #667085; --line: #e6e8ec; --accent: #2f6feb; --accent-ink: #fff;
+    --bg: #f4f6f9; --panel: #ffffff; --panel-2: #f8fafc; --ink: #1b1f24;
+    --muted: #667085; --line: #e5e8ee; --accent: #2f6feb; --accent-ink: #fff;
     --green: #1f9d55; --amber: #b7791f; --red: #c0392b; --gray: #7a828c;
-    --shadow: 0 1px 3px rgba(16,24,40,.08), 0 1px 2px rgba(16,24,40,.06);
-    --radius: 12px;
+    --shadow: 0 1px 3px rgba(16,24,40,.07), 0 1px 2px rgba(16,24,40,.05);
+    --radius: 12px; --side-w: 218px;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #0e1013; --panel: #17191e; --panel-2: #1c1f25; --ink: #e8eaed;
-      --muted: #9aa2ad; --line: #2a2e35; --accent: #4b83f0; --green: #35b06a;
+      --bg: #0d0f12; --panel: #16181d; --panel-2: #1b1e24; --ink: #e8eaed;
+      --muted: #9aa2ad; --line: #282c33; --accent: #4b83f0; --green: #35b06a;
       --amber: #d99a3a; --red: #e05c4c; --gray: #8b929c;
       --shadow: 0 1px 3px rgba(0,0,0,.4);
     }
@@ -24,46 +24,84 @@
   * { box-sizing: border-box; }
   body {
     margin: 0; background: var(--bg); color: var(--ink);
-    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font: 14.5px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
+
+  /* ---- top status bar ---- */
   header {
-    position: sticky; top: 0; z-index: 5; background: var(--panel);
-    border-bottom: 1px solid var(--line); padding: .75rem 1.25rem;
-    display: flex; align-items: center; gap: .9rem; box-shadow: var(--shadow);
+    position: sticky; top: 0; z-index: 20; background: var(--panel);
+    border-bottom: 1px solid var(--line); padding: .6rem 1.1rem;
+    display: flex; align-items: center; gap: .7rem; box-shadow: var(--shadow);
   }
-  header h1 { font-size: 1.05rem; margin: 0; letter-spacing: .2px; }
+  header h1 { font-size: 1rem; margin: 0 .4rem 0 0; letter-spacing: .2px; white-space: nowrap; }
   header .brand-dot { color: var(--green); }
   header .spacer { flex: 1; }
   .pill {
-    display: inline-flex; align-items: center; gap: .45rem; font-size: .82rem;
-    padding: .3rem .7rem; border-radius: 999px; border: 1px solid var(--line);
+    display: inline-flex; align-items: center; gap: .42rem; font-size: .8rem;
+    padding: .28rem .68rem; border-radius: 999px; border: 1px solid var(--line);
     background: var(--panel-2); color: var(--muted); white-space: nowrap;
   }
-  .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--gray); }
+  .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--gray); flex: none; }
   .pill.ok .dot { background: var(--green); }
   .pill.warn .dot { background: var(--amber); }
   .pill.off .dot { background: var(--red); }
-  main { max-width: 900px; margin: 0 auto; padding: 1.25rem; }
-  section { margin-bottom: 1.75rem; }
-  .sec-head { display: flex; align-items: baseline; gap: .6rem; margin: 0 0 .75rem; }
-  .sec-head h2 { font-size: 1rem; margin: 0; }
-  .sec-head .count { color: var(--muted); font-size: .85rem; }
-  .sec-head .spacer { flex: 1; }
+
+  /* ---- layout: left nav + content ---- */
+  .layout { display: flex; min-height: calc(100vh - 53px); }
+  nav.side {
+    width: var(--side-w); flex: none; padding: .9rem .6rem; border-right: 1px solid var(--line);
+    background: var(--panel); display: flex; flex-direction: column; gap: .15rem;
+  }
+  nav.side a {
+    display: flex; align-items: center; gap: .6rem; padding: .5rem .7rem;
+    border-radius: 8px; color: var(--muted); text-decoration: none; font-weight: 500;
+  }
+  nav.side a:hover { background: var(--panel-2); color: var(--ink); }
+  nav.side a.active {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent);
+  }
+  nav.side a .nbadge {
+    margin-left: auto; font-size: .72rem; font-weight: 700; min-width: 1.35rem;
+    text-align: center; padding: .08rem .38rem; border-radius: 999px;
+    background: color-mix(in srgb, var(--amber) 18%, transparent); color: var(--amber);
+  }
+  nav.side a .nbadge:empty { display: none; }
+  nav.side .navsec { margin: .8rem .7rem .25rem; font-size: .7rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+
+  main { flex: 1; min-width: 0; padding: 1.3rem 1.5rem 3rem; }
+  .view > h2 { font-size: 1.15rem; margin: 0 0 .2rem; }
+  .view > .viewsub { color: var(--muted); font-size: .88rem; margin: 0 0 1.1rem; }
+  .content { max-width: 980px; }
+
   .card {
     background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
     box-shadow: var(--shadow); padding: 1rem 1.1rem; margin-bottom: .8rem;
   }
+  .subhead { display: flex; align-items: baseline; gap: .55rem; margin: 1.3rem 0 .6rem; }
+  .subhead:first-of-type { margin-top: 0; }
+  .subhead h3 { font-size: .95rem; margin: 0; }
+  .subhead .count { color: var(--muted); font-size: .82rem; }
+  .empty { color: var(--muted); padding: 1.1rem 0; text-align: center; }
+  .hint { color: var(--muted); font-size: .88rem; }
+
+  /* overview stats */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .8rem; margin-bottom: 1rem; }
+  .stat { cursor: pointer; }
+  .stat .num { font-size: 1.7rem; font-weight: 700; line-height: 1.2; }
+  .stat .lbl { color: var(--muted); font-size: .84rem; }
   .qr-card { display: flex; gap: 1.1rem; align-items: center; flex-wrap: wrap; }
-  .qr-card img { width: 200px; height: 200px; border-radius: 8px; background: #fff; padding: 6px; }
-  .qr-card .hint { color: var(--muted); font-size: .9rem; max-width: 26rem; }
+  .qr-card img { width: 190px; height: 190px; border-radius: 8px; background: #fff; padding: 6px; }
+
   .draft .meta { font-size: .82rem; color: var(--muted); display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
   .draft .to { color: var(--ink); font-weight: 600; }
   .draft .body { white-space: pre-wrap; margin: .55rem 0; }
   .draft .note { font-size: .85rem; font-style: italic; color: var(--muted); }
   .draft .actions { margin-top: .6rem; display: flex; gap: .5rem; }
-  .empty { color: var(--muted); text-align: center; padding: 1.5rem 0; }
+
   button {
-    font: inherit; font-size: .88rem; padding: .45rem .9rem; border-radius: 8px;
+    font: inherit; font-size: .87rem; padding: .45rem .9rem; border-radius: 8px;
     border: 1px solid var(--line); background: var(--panel-2); color: var(--ink);
     cursor: pointer; transition: filter .12s;
   }
@@ -73,140 +111,215 @@
   button.green { background: var(--green); color: #fff; border-color: transparent; }
   button.red { background: var(--red); color: #fff; border-color: transparent; }
   button.ghost { background: transparent; }
+
   .table-wrap { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: .88rem; }
   th, td { text-align: left; padding: .55rem .6rem; border-bottom: 1px solid var(--line); vertical-align: middle; }
-  th { color: var(--muted); font-weight: 600; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; }
+  th { color: var(--muted); font-weight: 600; font-size: .76rem; text-transform: uppercase; letter-spacing: .05em; }
   td .sub { color: var(--muted); font-size: .8rem; }
-  .badge { display: inline-block; font-size: .74rem; font-weight: 600; padding: .18rem .5rem; border-radius: 999px; border: 1px solid transparent; }
+  .badge { display: inline-block; font-size: .74rem; font-weight: 600; padding: .18rem .5rem; border-radius: 999px; }
   .badge.read-only { background: color-mix(in srgb, var(--gray) 16%, transparent); color: var(--gray); }
   .badge.read-draft { background: color-mix(in srgb, var(--amber) 16%, transparent); color: var(--amber); }
   .badge.read-send { background: color-mix(in srgb, var(--green) 16%, transparent); color: var(--green); }
   .badge.off { background: color-mix(in srgb, var(--red) 16%, transparent); color: var(--red); }
-  form.newkey { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .7rem; align-items: end; }
-  form.newkey label { display: flex; flex-direction: column; gap: .28rem; font-size: .8rem; color: var(--muted); }
-  form.newkey input, form.newkey select {
+
+  form.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .7rem; align-items: end; }
+  form.grid label { display: flex; flex-direction: column; gap: .28rem; font-size: .8rem; color: var(--muted); }
+  form.grid input, form.grid select {
     font: inherit; padding: .45rem .55rem; border-radius: 8px; border: 1px solid var(--line);
     background: var(--panel-2); color: var(--ink);
   }
-  form.newkey .rolehelp { grid-column: 1 / -1; color: var(--muted); font-size: .82rem; margin-top: -.2rem; }
+  form.grid .formhelp { grid-column: 1 / -1; color: var(--muted); font-size: .82rem; margin-top: -.2rem; }
   .keybanner {
     background: color-mix(in srgb, var(--green) 12%, transparent);
     border: 1px solid color-mix(in srgb, var(--green) 40%, transparent);
     border-radius: 8px; padding: .7rem .9rem; margin-bottom: .8rem; font-size: .9rem;
   }
   .keybanner code { background: var(--panel); padding: .12rem .4rem; border-radius: 5px; user-select: all; word-break: break-all; }
-  #err { color: var(--red); white-space: pre-wrap; font-size: .88rem; margin: .5rem 0; }
-  .row-actions { display: flex; gap: .4rem; }
+  #err { color: var(--red); white-space: pre-wrap; font-size: .88rem; margin: 0 0 .6rem; }
+  .row-actions { display: flex; gap: .4rem; flex-wrap: wrap; }
+  .privrow { display: flex; align-items: center; gap: .6rem; padding: .4rem 0; border-bottom: 1px solid var(--line); font-size: .88rem; }
+  .privrow:last-child { border-bottom: 0; }
+  .privrow .jid { font-weight: 600; }
+  .privrow .why { color: var(--muted); }
+  .soon { opacity: .6; }
+  .soon .tag { font-size: .72rem; font-weight: 700; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: .1rem .5rem; margin-left: .5rem; }
+
+  /* ---- modal (key editing) ---- */
+  .overlay {
+    position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,.45);
+    display: flex; align-items: center; justify-content: center; padding: 1rem;
+  }
+  .modal { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    box-shadow: 0 12px 40px rgba(0,0,0,.35); width: min(560px, 100%); padding: 1.1rem 1.2rem; }
+  .modal h3 { margin: 0 0 .8rem; font-size: 1rem; }
+  .modal .actions { display: flex; gap: .5rem; justify-content: flex-end; margin-top: 1rem; }
+
   [hidden] { display: none !important; }
+
+  @media (max-width: 880px) {
+    .layout { flex-direction: column; }
+    nav.side {
+      width: auto; flex-direction: row; overflow-x: auto; border-right: 0;
+      border-bottom: 1px solid var(--line); padding: .45rem .6rem; gap: .3rem;
+    }
+    nav.side .navsec { display: none; }
+    nav.side a { white-space: nowrap; padding: .4rem .6rem; }
+    main { padding: 1rem .9rem 3rem; }
+  }
 </style>
 </head>
 <body>
 <header>
   <h1><span class="brand-dot">●</span> WA_GW admin</h1>
+  <span class="pill" id="waPill"><span class="dot"></span><span id="waText">connecting…</span></span>
+  <span class="pill" id="tgPill"><span class="dot"></span><span id="tgText">Telegram</span></span>
   <div class="spacer"></div>
-  <span class="pill" id="statusPill"><span class="dot"></span><span id="statusText">connecting…</span></span>
   <button class="ghost" id="refreshBtn" title="Refresh">↻</button>
   <button class="ghost" id="logoutBtn" title="Forget the admin token on this device">Log out</button>
 </header>
 
-<main>
-  <div id="err"></div>
+<div class="layout">
+  <nav class="side" id="nav">
+    <a href="#/overview" data-view="overview">Overview</a>
+    <div class="navsec">Operate</div>
+    <a href="#/requests" data-view="requests">Pending requests<span class="nbadge" id="reqBadge"></span></a>
+    <a href="#/scheduled" data-view="scheduled">Scheduled tasks<span class="nbadge" id="schedBadge"></span></a>
+    <div class="navsec">Configure</div>
+    <a href="#/channels" data-view="channels">Channels</a>
+    <a href="#/privacy" data-view="privacy">Chat privacy</a>
+    <a href="#/keys" data-view="keys">API keys</a>
+  </nav>
 
-  <section id="qrSection" hidden>
-    <div class="sec-head"><h2>Link WhatsApp</h2></div>
-    <div class="card qr-card">
-      <img id="qr" alt="WhatsApp login QR">
-      <div class="hint">
-        Open WhatsApp on your phone → <b>Settings → Linked devices → Link a device</b>,
-        then scan this code. You only do this once — the session persists across restarts.
+  <main><div class="content">
+    <div id="err"></div>
+
+    <!-- ================= Overview ================= -->
+    <section class="view" data-view="overview" hidden>
+      <h2>Overview</h2>
+      <p class="viewsub">Gateway health at a glance.</p>
+      <div class="stats">
+        <div class="card stat" data-goto="#/requests"><div class="num" id="stApprovals">–</div><div class="lbl">messages awaiting approval</div></div>
+        <div class="card stat" data-goto="#/requests"><div class="num" id="stGrants">–</div><div class="lbl">permission requests</div></div>
+        <div class="card stat" data-goto="#/scheduled"><div class="num" id="stSched">–</div><div class="lbl">scheduled sends</div></div>
+        <div class="card stat" data-goto="#/keys"><div class="num" id="stKeys">–</div><div class="lbl">active API keys</div></div>
       </div>
-    </div>
-  </section>
-
-  <section id="telegramSection">
-    <div class="sec-head"><h2>Telegram approvals</h2><span class="count" id="tgState"></span></div>
-    <div class="card">
-      <div id="tgBody" class="hint" style="margin-bottom:.7rem"></div>
-      <div class="row-actions" id="tgActions"></div>
-    </div>
-  </section>
-
-  <section id="approvalsSection">
-    <div class="sec-head">
-      <h2>Pending approvals</h2><span class="count" id="draftCount"></span>
-    </div>
-    <div id="draftList"></div>
-  </section>
-
-  <section id="scheduledSection">
-    <div class="sec-head">
-      <h2>Scheduled sends</h2><span class="count" id="schedCount"></span>
-    </div>
-    <div id="schedList"></div>
-  </section>
-
-  <section id="permsSection">
-    <div class="sec-head">
-      <h2>Pending permissions</h2><span class="count" id="permCount"></span>
-    </div>
-    <div id="permList"></div>
-  </section>
-
-  <section id="privacySection">
-    <div class="sec-head"><h2>Chat privacy</h2><span class="count" id="privCount"></span></div>
-    <div class="card">
-      <div class="hint" style="margin-bottom:.7rem">
-        Chats on this list are invisible to <b>every</b> agent key — chat lists,
-        messages, search, media, and the events feed. (Per-key read restrictions
-        are set on the key itself.)
+      <div class="card" id="connCard">
+        <div class="subhead"><h3>WhatsApp connection</h3></div>
+        <div id="connText" class="hint">…</div>
+        <div class="qr-card" id="qrWrap" hidden style="margin-top:.8rem">
+          <img id="qr" alt="WhatsApp login QR">
+          <div class="hint">Open WhatsApp on your phone → <b>Settings → Linked devices → Link a device</b>, then scan this code. You only do this once — the session persists across restarts.</div>
+        </div>
       </div>
-      <form class="newkey" id="privForm">
-        <label>Chat JID or phone<input name="jid" required placeholder="9725…@s.whatsapp.net or +9725…"></label>
-        <label>Reason<input name="reason" placeholder="optional" maxlength="200"></label>
-        <button class="primary" type="submit">Make private</button>
-      </form>
-      <div id="privList" style="margin-top:.7rem"></div>
-    </div>
-  </section>
+    </section>
 
-  <section id="keysSection">
-    <div class="sec-head">
-      <h2>API keys</h2><span class="count" id="keyCount"></span>
-      <div class="spacer"></div>
-      <button class="primary" id="newKeyToggle">+ New key</button>
-    </div>
+    <!-- ================= Pending requests ================= -->
+    <section class="view" data-view="requests" hidden>
+      <h2>Pending requests</h2>
+      <p class="viewsub">Everything waiting on your decision — outgoing messages and permission grants.</p>
+      <div class="subhead"><h3>Messages awaiting approval</h3><span class="count" id="draftCount"></span></div>
+      <div id="draftList"></div>
+      <div class="subhead"><h3>Permission requests</h3><span class="count" id="permCount"></span></div>
+      <div id="permList"></div>
+    </section>
 
-    <div class="card" id="newKeyCard" hidden>
-      <div class="keybanner" id="newKeyBanner" hidden></div>
-      <form class="newkey" id="newKeyForm">
-        <label>Name<input name="name" required placeholder="e.g. claude" maxlength="64"></label>
-        <label>Role
-          <select name="role">
-            <option value="read-only">read-only (default)</option>
-            <option value="read-draft">read-draft</option>
-            <option value="read-send">read-send</option>
-          </select>
-        </label>
-        <label>Auto-send to<input name="allowlist" placeholder="optional, comma-separated"></label>
-        <label>Never read<input name="readblock" placeholder="optional, comma-separated"></label>
-        <label>Only read<input name="readallow" placeholder="optional, comma-separated"></label>
-        <label>Expires (days)<input name="expires" type="number" min="1" max="3650" placeholder="never"></label>
-        <button class="primary" type="submit">Create</button>
-        <div class="rolehelp" id="roleHelp"></div>
-      </form>
-    </div>
+    <!-- ================= Scheduled ================= -->
+    <section class="view" data-view="scheduled" hidden>
+      <h2>Scheduled tasks</h2>
+      <p class="viewsub">Approved sends waiting for their delivery time. Cancel any of them before they fire.</p>
+      <div id="schedList"></div>
+    </section>
 
-    <div class="card table-wrap">
-      <table>
-        <thead><tr>
-          <th>Name</th><th>Role</th><th>Auto-send</th><th>Read privacy</th><th>Last used</th><th>Expires</th><th></th>
-        </tr></thead>
-        <tbody id="keyRows"></tbody>
-      </table>
+    <!-- ================= Channels ================= -->
+    <section class="view" data-view="channels" hidden>
+      <h2>External management channels</h2>
+      <p class="viewsub">Approve requests from wherever you are — the web console always works; these push decisions to your phone.</p>
+      <div class="card">
+        <div class="subhead"><h3>Telegram</h3><span class="count" id="tgState"></span></div>
+        <div id="tgBody" class="hint" style="margin-bottom:.7rem"></div>
+        <div class="row-actions" id="tgActions"></div>
+      </div>
+      <div class="card soon">
+        <div class="subhead"><h3>Discord<span class="tag">planned</span></h3></div>
+        <div class="hint">Approval cards in a Discord DM — same one-tap approve/reject. Not implemented yet; the notification layer is pluggable, so it slots in without touching agents.</div>
+      </div>
+    </section>
+
+    <!-- ================= Chat privacy ================= -->
+    <section class="view" data-view="privacy" hidden>
+      <h2>Chat privacy</h2>
+      <p class="viewsub">Chats on this list are invisible to <b>every</b> agent key — lists, messages, search, media, and the events feed. Per-key restrictions live on the key itself (API keys → Edit).</p>
+      <div class="card">
+        <form class="grid" id="privForm">
+          <label>Chat JID or phone<input name="jid" required placeholder="9725…@s.whatsapp.net or +9725…"></label>
+          <label>Reason<input name="reason" placeholder="optional" maxlength="200"></label>
+          <button class="primary" type="submit">Make private</button>
+        </form>
+        <div id="privList" style="margin-top:.7rem"></div>
+      </div>
+    </section>
+
+    <!-- ================= API keys ================= -->
+    <section class="view" data-view="keys" hidden>
+      <h2>API keys</h2>
+      <p class="viewsub">One key per agent. Roles gate what a key may do; edit a key any time to change its role, allowlists, or read privacy.</p>
+      <div class="card" id="newKeyCard">
+        <div class="subhead"><h3>Create a key</h3></div>
+        <div class="keybanner" id="newKeyBanner" hidden></div>
+        <form class="grid" id="newKeyForm">
+          <label>Name<input name="name" required placeholder="e.g. claude" maxlength="64"></label>
+          <label>Role
+            <select name="role">
+              <option value="read-only">read-only (default)</option>
+              <option value="read-draft">read-draft</option>
+              <option value="read-send">read-send</option>
+            </select>
+          </label>
+          <label>Auto-send to<input name="allowlist" placeholder="optional, comma-separated"></label>
+          <label>Never read<input name="readblock" placeholder="optional, comma-separated"></label>
+          <label>Only read<input name="readallow" placeholder="optional, comma-separated"></label>
+          <label>Expires (days)<input name="expires" type="number" min="1" max="3650" placeholder="never"></label>
+          <button class="primary" type="submit">Create</button>
+          <div class="formhelp" id="roleHelp"></div>
+        </form>
+      </div>
+      <div class="card table-wrap">
+        <table>
+          <thead><tr>
+            <th>Name</th><th>Role</th><th>Auto-send</th><th>Read privacy</th><th>Rate/min</th><th>Last used</th><th>Expires</th><th></th>
+          </tr></thead>
+          <tbody id="keyRows"></tbody>
+        </table>
+      </div>
+    </section>
+  </div></main>
+</div>
+
+<!-- ================= Edit-key modal ================= -->
+<div class="overlay" id="editOverlay" hidden>
+  <div class="modal">
+    <h3 id="editTitle">Edit key</h3>
+    <form class="grid" id="editForm">
+      <label>Role
+        <select name="role">
+          <option value="read-only">read-only</option>
+          <option value="read-draft">read-draft</option>
+          <option value="read-send">read-send</option>
+        </select>
+      </label>
+      <label>Rate/min<input name="rate" type="number" min="1" max="60"></label>
+      <label style="grid-column:1/-1">Auto-send to<input name="allowlist" placeholder="comma-separated; empty = role default"></label>
+      <label style="grid-column:1/-1">Never read<input name="readblock" placeholder="comma-separated; empty = none"></label>
+      <label style="grid-column:1/-1">Only read<input name="readallow" placeholder="comma-separated; empty = unrestricted"></label>
+      <div class="formhelp">Changing the role re-derives the key's scopes. Read lists apply on top of the global private list.</div>
+    </form>
+    <div class="actions">
+      <button class="ghost" id="editCancel">Cancel</button>
+      <button class="primary" id="editSave">Save changes</button>
     </div>
-  </section>
-</main>
+  </div>
+</div>
 
 <script>
 // ---- auth: ask once, keep in localStorage, re-prompt on 401 -----------------
@@ -237,33 +350,64 @@ const showErr = (e) => { $("err").textContent = e ? String(e.message || e) : "";
 const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; };
 const ago = (ts) => { const m = Math.round(Date.now() / 1000 - ts) / 60; return m < 1 ? "just now" : m < 60 ? Math.round(m) + " min ago" : Math.round(m / 60) + " h ago"; };
 const fmtDate = (ts) => ts ? new Date(ts * 1000).toLocaleDateString() : "—";
+const fmtWhen = (ts) => new Date(ts * 1000).toLocaleString();
+const csv = (v) => v.split(",").map(s => s.trim()).filter(Boolean);
 
-// ---- status + QR ------------------------------------------------------------
+// ---- hash router ------------------------------------------------------------
+const VIEWS = ["overview", "requests", "scheduled", "channels", "privacy", "keys"];
+function currentView() {
+  const v = (location.hash.replace(/^#\//, "") || "overview");
+  return VIEWS.includes(v) ? v : "overview";
+}
+function renderRoute() {
+  const v = currentView();
+  document.querySelectorAll("section.view").forEach(s => s.hidden = s.dataset.view !== v);
+  document.querySelectorAll("nav.side a").forEach(a => a.classList.toggle("active", a.dataset.view === v));
+}
+window.addEventListener("hashchange", () => { renderRoute(); refreshAll(); });
+document.querySelectorAll(".stat[data-goto]").forEach(c => c.onclick = () => { location.hash = c.dataset.goto; });
+
+// ---- top bar: WhatsApp + QR (overview card) --------------------------------
 async function refreshStatus() {
   const st = await api("/v1/admin/status");
-  const pill = $("statusPill"), txt = $("statusText");
+  const pill = $("waPill"), txt = $("waText");
   pill.className = "pill";
   if (st.sidecar !== "up") { pill.classList.add("off"); txt.textContent = "sidecar down"; }
-  else if (st.logged_in) { pill.classList.add("ok"); txt.textContent = "linked · " + (st.push_name || st.jid || "connected"); }
-  else { pill.classList.add("warn"); txt.textContent = "not linked — scan QR"; }
+  else if (st.logged_in) { pill.classList.add("ok"); txt.textContent = "WhatsApp · " + (st.push_name || "linked"); }
+  else { pill.classList.add("warn"); txt.textContent = "WhatsApp not linked"; }
   const needsQr = st.sidecar === "up" && !st.logged_in && st.waiting_for_qr;
-  $("qrSection").hidden = !needsQr;
+  $("connText").textContent =
+    st.sidecar !== "up" ? "The sidecar container is down — reads and sends are unavailable. Check `docker compose logs sidecar`."
+    : st.logged_in ? `Linked as ${st.push_name || st.jid || "this account"}. Messages archive continuously; sends are live.`
+    : needsQr ? "Not linked yet — scan the QR below from your phone."
+    : "Not linked. Waiting for the sidecar to issue a login QR…";
+  $("qrWrap").hidden = !needsQr;
   if (needsQr) await showQR();
 }
 async function showQR() {
   const res = await fetch("/v1/admin/qr", { headers: { "Authorization": "Bearer " + token } });
-  if (!res.ok) { $("qrSection").hidden = true; return; }
+  if (!res.ok) { $("qrWrap").hidden = true; return; }
   const img = $("qr"); const old = img.src;
   img.src = URL.createObjectURL(await res.blob());
   if (old) URL.revokeObjectURL(old);
 }
 
-// ---- approvals --------------------------------------------------------------
+// ---- pending requests: drafts + grants -------------------------------------
+let counts = { drafts: 0, grants: 0, sched: 0 };
+function paintBadges() {
+  const req = counts.drafts + counts.grants;
+  $("reqBadge").textContent = req ? String(req) : "";
+  $("schedBadge").textContent = counts.sched ? String(counts.sched) : "";
+  $("stApprovals").textContent = counts.drafts;
+  $("stGrants").textContent = counts.grants;
+  $("stSched").textContent = counts.sched;
+}
 async function refreshDrafts() {
   const drafts = await api("/v1/admin/drafts?status=pending");
+  counts.drafts = drafts.length; paintBadges();
   $("draftCount").textContent = drafts.length ? `${drafts.length} waiting` : "";
   const list = $("draftList"); list.replaceChildren();
-  if (!drafts.length) { list.append(el("div", "empty", "Nothing waiting for approval.")); return; }
+  if (!drafts.length) { list.append(el("div", "empty", "No messages waiting for approval.")); return; }
   for (const d of drafts) {
     const card = el("div", "card draft");
     const meta = el("div", "meta");
@@ -279,12 +423,45 @@ async function refreshDrafts() {
     actions.append(approve, reject); card.append(actions); list.append(card);
   }
 }
-const fmtWhen = (ts) => new Date(ts * 1000).toLocaleString();
+async function decide(id, action, ...btns) {
+  btns.forEach(b => b.disabled = true); showErr();
+  try { await api(`/v1/admin/drafts/${id}/${action}`, { method: "POST" }); }
+  catch (e) { showErr(e); btns.forEach(b => b.disabled = false); }
+  refreshDrafts(); refreshScheduled();
+}
+async function refreshGrants() {
+  const gs = await api("/v1/admin/grants?status=pending");
+  counts.grants = gs.length; paintBadges();
+  $("permCount").textContent = gs.length ? `${gs.length} waiting` : "";
+  const list = $("permList"); list.replaceChildren();
+  if (!gs.length) { list.append(el("div", "empty", "No permission requests.")); return; }
+  for (const g of gs) {
+    const card = el("div", "card draft");
+    const want = g.kind === "send_recipient"
+      ? `send to ${g.to_jid}` + (g.expires_at ? " (time-limited)" : " (always)")
+      : "send to anyone (time-limited)";
+    card.append(el("div", "meta", `${g.key_name} · ${ago(g.created_at)}`));
+    card.append(el("div", "body", "Wants permission to " + want));
+    if (g.reason) card.append(el("div", "note", g.reason));
+    const actions = el("div", "actions");
+    const approve = el("button", "green", "Approve");
+    const reject = el("button", "red", "Reject");
+    approve.onclick = () => decideGrant(g.id, "approve", approve, reject);
+    reject.onclick = () => decideGrant(g.id, "reject", approve, reject);
+    actions.append(approve, reject); card.append(actions); list.append(card);
+  }
+}
+async function decideGrant(id, action, ...btns) {
+  btns.forEach(b => b.disabled = true); showErr();
+  try { await api(`/v1/admin/grants/${id}/${action}`, { method: "POST" }); }
+  catch (e) { showErr(e); btns.forEach(b => b.disabled = false); }
+  refreshGrants();
+}
 
 // ---- scheduled sends --------------------------------------------------------
 async function refreshScheduled() {
   const items = await api("/v1/admin/drafts?status=scheduled");
-  $("schedCount").textContent = items.length ? `${items.length} queued` : "";
+  counts.sched = items.length; paintBadges();
   const list = $("schedList"); list.replaceChildren();
   if (!items.length) { list.append(el("div", "empty", "No scheduled sends.")); return; }
   for (const d of items) {
@@ -305,131 +482,17 @@ async function refreshScheduled() {
   }
 }
 
-// ---- chat privacy -----------------------------------------------------------
-async function refreshPrivacy() {
-  const chats = await api("/v1/admin/privacy/chats");
-  $("privCount").textContent = chats.length ? `${chats.length} private` : "";
-  const list = $("privList"); list.replaceChildren();
-  if (!chats.length) { list.append(el("div", "empty", "No private chats.")); return; }
-  for (const c of chats) {
-    const row = el("div", "meta");
-    row.style.cssText = "display:flex;align-items:center;gap:.6rem;padding:.35rem 0;border-bottom:1px solid var(--line)";
-    row.append(el("span", "to", c.jid));
-    if (c.reason) row.append(el("span", null, "· " + c.reason));
-    const rm = el("button", "ghost", "Remove"); rm.style.marginLeft = "auto";
-    rm.onclick = async () => {
-      rm.disabled = true; showErr();
-      try { await api(`/v1/admin/privacy/chats/${encodeURIComponent(c.jid)}`, { method: "DELETE" }); }
-      catch (e) { showErr(e); rm.disabled = false; }
-      refreshPrivacy();
-    };
-    row.append(rm); list.append(row);
-  }
-}
-$("privForm").onsubmit = async (e) => {
-  e.preventDefault(); showErr();
-  const f = e.target;
-  try {
-    await api("/v1/admin/privacy/chats", { method: "POST",
-      body: JSON.stringify({ jid: f.jid.value.trim(), reason: f.reason.value.trim() }) });
-    f.reset();
-  } catch (e) { showErr(e); }
-  refreshPrivacy();
-};
-async function decide(id, action, ...btns) {
-  btns.forEach(b => b.disabled = true); showErr();
-  try { await api(`/v1/admin/drafts/${id}/${action}`, { method: "POST" }); }
-  catch (e) { showErr(e); btns.forEach(b => b.disabled = false); }
-  refreshDrafts();
-}
-
-// ---- keys -------------------------------------------------------------------
-const ROLE_HELP = {
-  "read-only": "Reads your messages/chats/contacts. Cannot send or draft.",
-  "read-draft": "Reads, and composes drafts you must approve & send.",
-  "read-send": "Reads, and sends on your behalf (auto-approved). Add an auto-send list to limit who it can message without approval.",
-};
-async function refreshKeys() {
-  const keys = await api("/v1/admin/keys");
-  $("keyCount").textContent = keys.length ? `${keys.length} total` : "";
-  const rows = $("keyRows"); rows.replaceChildren();
-  for (const k of keys) {
-    const tr = el("tr");
-    const nameTd = el("td"); nameTd.append(el("div", null, k.name));
-    if (k.rotating) nameTd.append(el("div", "sub", "rotating — old key still valid"));
-    tr.append(nameTd);
-    const roleTd = el("td");
-    roleTd.append(el("span", "badge " + (k.disabled ? "off" : k.role), k.disabled ? "disabled" : k.role));
-    tr.append(roleTd);
-    tr.append(el("td", null, k.send_allowlist && k.send_allowlist.length ? k.send_allowlist.join(", ") : (k.role === "read-send" ? "anyone" : "—")));
-    const privParts = [];
-    if (k.read_allowlist && k.read_allowlist.length) privParts.push("only " + k.read_allowlist.length + " chat" + (k.read_allowlist.length > 1 ? "s" : ""));
-    if (k.read_blocklist && k.read_blocklist.length) privParts.push("blocks " + k.read_blocklist.length);
-    tr.append(el("td", null, privParts.length ? privParts.join(", ") : "—"));
-    const usedTd = el("td");
-    usedTd.append(el("div", null, k.last_used_at ? ago(k.last_used_at) : "never"));
-    if (k.last_used_ip) usedTd.append(el("div", "sub", k.last_used_ip));
-    tr.append(usedTd);
-    tr.append(el("td", null, fmtDate(k.expires_at)));
-    const actTd = el("td"); const wrap = el("div", "row-actions");
-    const rotate = el("button", "ghost", "Rotate");
-    rotate.onclick = () => rotateKey(k.id, rotate);
-    const toggle = el("button", k.disabled ? "" : "ghost", k.disabled ? "Enable" : "Disable");
-    toggle.onclick = () => setDisabled(k.id, !k.disabled, toggle);
-    wrap.append(rotate, toggle); actTd.append(wrap); tr.append(actTd);
-    rows.append(tr);
-  }
-}
-async function rotateKey(id, btn) {
-  btn.disabled = true; showErr();
-  try {
-    const r = await api(`/v1/admin/keys/${id}/rotate`, { method: "POST" });
-    banner(`Rotated. New secret (old works for the grace window): `, r.key);
-  } catch (e) { showErr(e); }
-  btn.disabled = false; refreshKeys();
-}
-async function setDisabled(id, disabled, btn) {
-  btn.disabled = true; showErr();
-  try { await api(`/v1/admin/keys/${id}`, { method: "PATCH", body: JSON.stringify({ disabled }) }); }
-  catch (e) { showErr(e); }
-  refreshKeys();
-}
-function banner(msg, key) {
-  const b = $("newKeyBanner"); b.hidden = false; b.replaceChildren();
-  b.append(document.createTextNode(msg));
-  const code = el("code", null, key); b.append(code);
-  b.append(el("div", "sub", "Copy it now — it is never shown again."));
-  $("newKeyCard").hidden = false;
-}
-$("newKeyToggle").onclick = () => { const c = $("newKeyCard"); c.hidden = !c.hidden; };
-const roleSel = document.querySelector('select[name=role]');
-const setRoleHelp = () => { $("roleHelp").textContent = ROLE_HELP[roleSel.value]; };
-roleSel.onchange = setRoleHelp; setRoleHelp();
-$("newKeyForm").onsubmit = async (e) => {
-  e.preventDefault(); showErr();
-  const f = e.target;
-  const body = { name: f.name.value.trim(), role: f.role.value };
-  const csv = (v) => v.split(",").map(s => s.trim()).filter(Boolean);
-  const allow = csv(f.allowlist.value);
-  if (allow.length) body.allowlist = allow;
-  const readBlock = csv(f.readblock.value);
-  if (readBlock.length) body.read_blocklist = readBlock;
-  const readAllow = csv(f.readallow.value);
-  if (readAllow.length) body.read_allowlist = readAllow;
-  if (f.expires.value) body.expires_in_days = Number(f.expires.value);
-  try {
-    const r = await api("/v1/admin/keys", { method: "POST", body: JSON.stringify(body) });
-    banner(`Created ${r.role} key "${body.name}": `, r.key);
-    f.reset(); setRoleHelp();
-  } catch (e) { showErr(e); }
-  refreshKeys();
-};
-
-// ---- Telegram ---------------------------------------------------------------
+// ---- channels: Telegram -----------------------------------------------------
 async function refreshTelegram() {
   const t = await api("/v1/admin/telegram");
-  $("tgState").textContent = !t.token_present ? "no token"
+  const state = !t.token_present ? "no token"
     : t.enabled && t.chat_linked ? "on" : t.chat_linked ? "linked (off)" : "not linked";
+  $("tgState").textContent = state;
+  const pill = $("tgPill"), ptxt = $("tgText");
+  pill.className = "pill";
+  if (t.enabled && t.chat_linked) { pill.classList.add("ok"); ptxt.textContent = "Telegram on"; }
+  else if (t.token_present) { pill.classList.add("warn"); ptxt.textContent = "Telegram " + state; }
+  else { ptxt.textContent = "Telegram off"; }
   const body = $("tgBody"), acts = $("tgActions");
   body.replaceChildren(); acts.replaceChildren();
   if (!t.token_present) {
@@ -464,40 +527,165 @@ async function tgAction(path, body) {
   refreshTelegram();
 }
 
-// ---- pending permissions ----------------------------------------------------
-async function refreshGrants() {
-  const gs = await api("/v1/admin/grants?status=pending");
-  $("permCount").textContent = gs.length ? `${gs.length} waiting` : "";
-  const list = $("permList"); list.replaceChildren();
-  if (!gs.length) { list.append(el("div", "empty", "No permission requests.")); return; }
-  for (const g of gs) {
-    const card = el("div", "card draft");
-    const want = g.kind === "send_recipient"
-      ? `send to ${g.to_jid}` + (g.expires_at ? " (time-limited)" : " (always)")
-      : "send to anyone (time-limited)";
-    card.append(el("div", "meta", `${g.key_name} · ${ago(g.created_at)}`));
-    card.append(el("div", "body", "Wants permission to " + want));
-    if (g.reason) card.append(el("div", "note", g.reason));
-    const actions = el("div", "actions");
-    const approve = el("button", "green", "Approve");
-    const reject = el("button", "red", "Reject");
-    approve.onclick = () => decideGrant(g.id, "approve", approve, reject);
-    reject.onclick = () => decideGrant(g.id, "reject", approve, reject);
-    actions.append(approve, reject); card.append(actions); list.append(card);
+// ---- chat privacy -----------------------------------------------------------
+async function refreshPrivacy() {
+  const chats = await api("/v1/admin/privacy/chats");
+  const list = $("privList"); list.replaceChildren();
+  if (!chats.length) { list.append(el("div", "empty", "No private chats.")); return; }
+  for (const c of chats) {
+    const row = el("div", "privrow");
+    row.append(el("span", "jid", c.jid));
+    if (c.reason) row.append(el("span", "why", "· " + c.reason));
+    const rm = el("button", "ghost", "Remove"); rm.style.marginLeft = "auto";
+    rm.onclick = async () => {
+      rm.disabled = true; showErr();
+      try { await api(`/v1/admin/privacy/chats/${encodeURIComponent(c.jid)}`, { method: "DELETE" }); }
+      catch (e) { showErr(e); rm.disabled = false; }
+      refreshPrivacy();
+    };
+    row.append(rm); list.append(row);
   }
 }
-async function decideGrant(id, action, ...btns) {
-  btns.forEach(b => b.disabled = true); showErr();
-  try { await api(`/v1/admin/grants/${id}/${action}`, { method: "POST" }); }
-  catch (e) { showErr(e); btns.forEach(b => b.disabled = false); }
-  refreshGrants();
+$("privForm").onsubmit = async (e) => {
+  e.preventDefault(); showErr();
+  const f = e.target;
+  try {
+    await api("/v1/admin/privacy/chats", { method: "POST",
+      body: JSON.stringify({ jid: f.jid.value.trim(), reason: f.reason.value.trim() }) });
+    f.reset();
+  } catch (e) { showErr(e); }
+  refreshPrivacy();
+};
+
+// ---- API keys ---------------------------------------------------------------
+const ROLE_HELP = {
+  "read-only": "Reads your messages/chats/contacts. Cannot send or draft.",
+  "read-draft": "Reads, and composes drafts you must approve & send.",
+  "read-send": "Reads, and sends on your behalf (auto-approved). Add an auto-send list to limit who it can message without approval.",
+};
+let keysCache = [];
+async function refreshKeys() {
+  const keys = await api("/v1/admin/keys");
+  keysCache = keys;
+  $("stKeys").textContent = keys.filter(k => !k.disabled).length;
+  const rows = $("keyRows"); rows.replaceChildren();
+  for (const k of keys) {
+    const tr = el("tr");
+    const nameTd = el("td"); nameTd.append(el("div", null, k.name));
+    if (k.rotating) nameTd.append(el("div", "sub", "rotating — old key still valid"));
+    tr.append(nameTd);
+    const roleTd = el("td");
+    roleTd.append(el("span", "badge " + (k.disabled ? "off" : k.role), k.disabled ? "disabled" : k.role));
+    tr.append(roleTd);
+    tr.append(el("td", null, k.send_allowlist && k.send_allowlist.length ? k.send_allowlist.join(", ") : (k.role === "read-send" ? "anyone" : "—")));
+    const privParts = [];
+    if (k.read_allowlist && k.read_allowlist.length) privParts.push("only " + k.read_allowlist.length + " chat" + (k.read_allowlist.length > 1 ? "s" : ""));
+    if (k.read_blocklist && k.read_blocklist.length) privParts.push("blocks " + k.read_blocklist.length);
+    tr.append(el("td", null, privParts.length ? privParts.join(", ") : "—"));
+    tr.append(el("td", null, String(k.rate_per_min)));
+    const usedTd = el("td");
+    usedTd.append(el("div", null, k.last_used_at ? ago(k.last_used_at) : "never"));
+    if (k.last_used_ip) usedTd.append(el("div", "sub", k.last_used_ip));
+    tr.append(usedTd);
+    tr.append(el("td", null, fmtDate(k.expires_at)));
+    const actTd = el("td"); const wrap = el("div", "row-actions");
+    const edit = el("button", "", "Edit");
+    edit.onclick = () => openEdit(k.id);
+    const rotate = el("button", "ghost", "Rotate");
+    rotate.onclick = () => rotateKey(k.id, rotate);
+    const toggle = el("button", "ghost", k.disabled ? "Enable" : "Disable");
+    toggle.onclick = () => setDisabled(k.id, !k.disabled, toggle);
+    wrap.append(edit, rotate, toggle); actTd.append(wrap); tr.append(actTd);
+    rows.append(tr);
+  }
 }
+async function rotateKey(id, btn) {
+  btn.disabled = true; showErr();
+  try {
+    const r = await api(`/v1/admin/keys/${id}/rotate`, { method: "POST" });
+    banner(`Rotated. New secret (old works for the grace window): `, r.key);
+  } catch (e) { showErr(e); }
+  btn.disabled = false; refreshKeys();
+}
+async function setDisabled(id, disabled, btn) {
+  btn.disabled = true; showErr();
+  try { await api(`/v1/admin/keys/${id}`, { method: "PATCH", body: JSON.stringify({ disabled }) }); }
+  catch (e) { showErr(e); }
+  refreshKeys();
+}
+function banner(msg, key) {
+  const b = $("newKeyBanner"); b.hidden = false; b.replaceChildren();
+  b.append(document.createTextNode(msg));
+  const code = el("code", null, key); b.append(code);
+  b.append(el("div", "sub", "Copy it now — it is never shown again."));
+}
+const roleSel = document.querySelector('#newKeyForm select[name=role]');
+const setRoleHelp = () => { $("roleHelp").textContent = ROLE_HELP[roleSel.value]; };
+roleSel.onchange = setRoleHelp; setRoleHelp();
+$("newKeyForm").onsubmit = async (e) => {
+  e.preventDefault(); showErr();
+  const f = e.target;
+  const body = { name: f.name.value.trim(), role: f.role.value };
+  const allow = csv(f.allowlist.value);
+  if (allow.length) body.allowlist = allow;
+  const readBlock = csv(f.readblock.value);
+  if (readBlock.length) body.read_blocklist = readBlock;
+  const readAllow = csv(f.readallow.value);
+  if (readAllow.length) body.read_allowlist = readAllow;
+  if (f.expires.value) body.expires_in_days = Number(f.expires.value);
+  try {
+    const r = await api("/v1/admin/keys", { method: "POST", body: JSON.stringify(body) });
+    banner(`Created ${r.role} key "${body.name}": `, r.key);
+    f.reset(); setRoleHelp();
+  } catch (e) { showErr(e); }
+  refreshKeys();
+};
+
+// ---- edit-key modal ---------------------------------------------------------
+let editingId = null;
+function openEdit(id) {
+  const k = keysCache.find(x => x.id === id);
+  if (!k) return;
+  editingId = id;
+  $("editTitle").textContent = `Edit key “${k.name}”`;
+  const f = $("editForm");
+  f.role.value = k.role;
+  f.rate.value = k.rate_per_min;
+  f.allowlist.value = (k.send_allowlist || []).join(", ");
+  f.readblock.value = (k.read_blocklist || []).join(", ");
+  f.readallow.value = (k.read_allowlist || []).join(", ");
+  $("editOverlay").hidden = false;
+}
+function closeEdit() { $("editOverlay").hidden = true; editingId = null; }
+$("editCancel").onclick = closeEdit;
+$("editOverlay").onclick = (e) => { if (e.target === $("editOverlay")) closeEdit(); };
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeEdit(); });
+$("editSave").onclick = async () => {
+  if (editingId === null) return;
+  const f = $("editForm");
+  const body = {
+    role: f.role.value,
+    rate_per_min: Number(f.rate.value) || undefined,
+    allowlist: csv(f.allowlist.value),          // [] deliberately clears the list
+    read_blocklist: csv(f.readblock.value),
+    read_allowlist: csv(f.readallow.value),
+  };
+  $("editSave").disabled = true; showErr();
+  try {
+    await api(`/v1/admin/keys/${editingId}`, { method: "PATCH", body: JSON.stringify(body) });
+    closeEdit();
+  } catch (e) { showErr(e); }
+  $("editSave").disabled = false;
+  refreshKeys();
+};
 
 // ---- boot + poll ------------------------------------------------------------
 async function refreshAll() {
   showErr();
-  try { await Promise.all([refreshStatus(), refreshDrafts(), refreshScheduled(), refreshKeys(), refreshTelegram(), refreshGrants(), refreshPrivacy()]); }
-  catch (e) { showErr(e); }
+  try {
+    await Promise.all([refreshStatus(), refreshDrafts(), refreshScheduled(),
+                       refreshKeys(), refreshTelegram(), refreshGrants(), refreshPrivacy()]);
+  } catch (e) { showErr(e); }
 }
 $("refreshBtn").onclick = refreshAll;
 $("logoutBtn").onclick = () => {
@@ -506,6 +694,7 @@ $("logoutBtn").onclick = () => {
   token = null;
   location.reload();
 };
+renderRoute();
 refreshAll();
 setInterval(() => {
   refreshStatus().catch(() => {});
