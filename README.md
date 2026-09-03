@@ -1,22 +1,26 @@
 # WA_GW — a personal WhatsApp gateway for AI agents
 
-Give AI assistants access to your WhatsApp **without giving them your phone or
-the power to impersonate you**. WA_GW enrolls as a WhatsApp *linked device*
-(like WhatsApp Web) and becomes the only holder of the session. Agents never
-touch WhatsApp — they talk to this gateway's API, and the gateway enforces
-policy:
+Let AI assistants use your WhatsApp **without handing over the keys**. An agent
+can read your chats and draft replies, but nothing goes out unless your rules —
+or you, personally — allow it. Approval requests pop up in your browser or as
+one-tap buttons in Telegram.
 
-- **Role-based keys** — each agent key is `read-only` (the default), `read-draft`,
-  or `read-send`; only a read-send key can message people on your behalf.
-- **Send allowlists** — restrict a read-send key to specific recipients (off-list
-  messages fall back to approval).
+It works like WhatsApp Web: WA_GW links to your account as a companion device
+and keeps the session to itself. Agents never touch WhatsApp — they talk to
+this gateway, and the gateway decides what each one may do:
+
+- **Roles** — each agent key is `read-only` (the default), `read-draft`, or
+  `read-send`; only a read-send key can message people on your behalf.
+- **Allowlists & grants** — restrict who a key may message; an agent can
+  *request* more ("send to X", "send for the next N hours") and you approve
+  each request yourself.
 - **Draft + approval queue** — a read-draft key's messages become drafts that
-  *you* approve from a browser (works from your phone) before they're sent.
+  *you* approve (web console or Telegram) before they're sent.
 - **Rate limits** — per-key per-minute and a global daily cap, drafts included.
 - **Full audit log** — every read and every send attempt, per agent.
 
-Interfaces: **REST** and **MCP** (streamable HTTP), so Claude Code / Claude
-Desktop and any HTTP client can use it.
+Agents connect over **REST** or **MCP** (streamable HTTP), so Claude Code /
+Claude Desktop and any HTTP client work out of the box.
 
 ## Architecture
 
