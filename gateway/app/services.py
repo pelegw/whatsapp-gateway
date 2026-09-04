@@ -274,6 +274,42 @@ def cancel_draft(auth: AuthContext, draft_id: str) -> dict:
     return {"id": draft_id, "status": "canceled"}
 
 
+def get_my_access(auth: AuthContext) -> dict:
+    """Self-introspection: the key's own effective capabilities.
+
+    Discloses only what the key COULD discover empirically (role, its own
+    allowlists, rate, expiry, active grants) — never its blind spots: the
+    per-key read_blocklist and the global private list stay out, because
+    listing them would reveal exactly which chats exist but are hidden,
+    defeating "a hidden chat is indistinguishable from a nonexistent one".
+    Not audited: agents are told to poll this, and self-introspection says
+    nothing about the human's data.
+    """
+    grants.sweep_expired()
+    with db.connect() as conn:
+        row = conn.execute("SELECT expires_at FROM api_keys WHERE id = ?",
+                           (auth.key_id,)).fetchone()
+    active = [
+        {"id": g["id"], "kind": g["kind"], "to_jid": g["to_jid"],
+         "expires_at": g["expires_at"]}
+        for g in grants.list_for_key(auth.key_id, 200)
+        if g["status"] == "approved"
+    ]
+    out = {
+        "name": auth.name,
+        "role": auth.role,
+        "rate_per_min": auth.rate_per_min,
+        "key_expires_at": row["expires_at"] if row else None,
+        "send_allowlist": list(auth.send_allowlist),
+        "active_grants": active,
+    }
+    if auth.read_allowlist:
+        # Only when set: it bounds what the key can DO (entries are chats it can
+        # already see). An empty list means unrestricted, so it is omitted.
+        out["read_allowlist"] = list(auth.read_allowlist)
+    return out
+
+
 # ---------------------------------------------------------------- permission grants
 
 def request_permission(auth: AuthContext, kind: str, contact: str | None = None,

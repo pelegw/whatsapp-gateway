@@ -16,8 +16,8 @@ from .config import get_settings, validate_exposure
 from .mcp_server import MCPAuthMiddleware, mcp
 from .origin import OriginGuardMiddleware
 from .policy import PolicyError
-from .routers import (admin, chats, contacts, drafts, events, health, media,
-                      messages, permissions, send, skill)
+from .routers import (admin, chats, contacts, drafts, events, health, me,
+                      media, messages, permissions, send, skill)
 from .sidecar import SidecarError
 
 
@@ -62,7 +62,7 @@ api = FastAPI(
 
 for r in (health.router, chats.router, messages.router, contacts.router,
           media.router, send.router, drafts.router, permissions.router,
-          events.router, skill.router, admin.router, admin.page_router):
+          events.router, me.router, skill.router, admin.router, admin.page_router):
     api.include_router(r)
 
 

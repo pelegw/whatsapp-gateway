@@ -28,6 +28,10 @@ do. Do not attempt to work around it.
 - `get_draft_status(draft_id)` / `list_my_drafts()` — check queued drafts
   (statuses: pending, scheduled, sending, sent, rejected, expired, canceled, failed).
 - `cancel_draft(draft_id)` — cancel your own draft while pending or scheduled.
+- `get_my_access()` — what this key may do: role, rate limit, key expiry, send
+  allowlist, active grants with expiry. Call at session start and re-check when
+  a send is denied or a grant nears expiry, instead of probing. It never lists
+  what's hidden from you — a 404 chat may still exist.
 - `request_permission(kind, contact?, duration_hours?, reason?)` — ask the human
   for a scoped capability when your key can't send: `kind="send_recipient"` (may
   auto-send to `contact`, optionally only for `duration_hours`) or
@@ -93,6 +97,7 @@ request. The permission model above applies identically (a send returns `200`
   as above; a schedule returns `202 {"status":"scheduled",...}`).
 - `POST /v1/drafts` `{"to","text","note","send_at?|delay_seconds?"}` · `GET /v1/drafts` · `GET`/`DELETE /v1/drafts/{id}`.
 - `POST /v1/permissions/request` `{"kind","contact?","duration_hours?","reason?"}` · `GET /v1/permissions[/{id}]`.
+- `GET /v1/me` — self-introspection: role, rate, key expiry, allowlist, active grants.
 
 The gateway also serves this guide with the live base URL at `GET /skill` (no key).
 

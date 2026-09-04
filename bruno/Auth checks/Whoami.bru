@@ -1,0 +1,23 @@
+meta {
+  name: Whoami
+  type: http
+  seq: 9
+}
+
+get {
+  url: {{baseUrl}}/v1/me
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{agentKey}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+docs {
+  Self-introspection: the key's role, rate limit, expiry, send allowlist, active grants, and (only when restricted) its read allowlist. Deliberately omits read blocklists and the global private list — a key must not learn its blind spots.
+}

@@ -13,13 +13,21 @@ Auth: send `Authorization: Bearer wagw_...` (your API key) on every request.
   The tools are self-describing: `list_chats`, `read_messages`,
   `search_messages`, `check_new_messages`, `search_contacts`, `send_message`,
   `create_draft`, `get_draft_status`, `list_my_drafts`, `cancel_draft`,
-  `request_permission`, `get_permission_status`, `list_my_permissions`.
+  `request_permission`, `get_permission_status`, `list_my_permissions`,
+  `get_my_access`.
 - **REST** (any HTTP client): the endpoints below.
 
 ## Permission model — read before sending
 
-Your key has one of three roles. You are not told which; infer it from
-responses and never assume more capability than the results show:
+**Check your access up front**: `get_my_access` (REST: `GET {{BASE_URL}}/v1/me`)
+returns your role, rate limit, key expiry, send allowlist, and active grants
+with their expiry — call it at session start and re-check when a send is denied
+or a grant nears expiry, instead of probing by trial and error. It lists what
+you CAN do, never what is hidden from you (some chats may be invisible to your
+key and are not enumerated anywhere).
+
+Your key has one of three roles; never assume more capability than
+`get_my_access` and actual responses show:
 
 - **read-only** — read but not send. Sending returns 403. Do not retry; tell the
   user the key is read-only.
@@ -93,6 +101,8 @@ Reads:
 - `GET {{BASE_URL}}/v1/contacts?q=&limit=` — resolve a name/number to a JID.
 - `GET {{BASE_URL}}/v1/media/{chat_jid}/{message_id}` — download media bytes.
 - `GET {{BASE_URL}}/v1/events?cursor=&wait=&limit=` — new-message feed (above).
+- `GET {{BASE_URL}}/v1/me` — your role, rate limit, key expiry, send allowlist,
+  active grants (self-introspection; cheap to poll).
 
 Writes:
 - `POST {{BASE_URL}}/v1/send` `{"to": "<jid or +phone>", "text": "...", "send_at?|delay_seconds?"}`

@@ -168,6 +168,16 @@ async def list_my_permissions() -> str:
     return await _run(services.list_my_permissions, _auth())
 
 
+@mcp.tool()
+async def get_my_access() -> str:
+    """What this key may do: role, rate limit, key expiry, send allowlist,
+    active grants (with expiry), and — when restricted — the chats it may read.
+    Call it at session start and re-check when a send is denied or a grant
+    nears expiry, instead of probing by trial and error. Note: some chats may
+    be hidden from you and are NOT listed here; a 404 chat may still exist."""
+    return await _run(services.get_my_access, _auth())
+
+
 class MCPAuthMiddleware:
     """ASGI wrapper for the mounted MCP app: Bearer key -> AuthContext contextvar."""
 

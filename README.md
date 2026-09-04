@@ -247,6 +247,7 @@ discoverable via contact search; only the conversation is hidden.
 | `POST /v1/send {to, text, send_at?\|delay_seconds?}` | 200 sent · 202 pending_approval / scheduled · 403/429 denied |
 | `POST /v1/drafts` / `GET /v1/drafts` / `DELETE /v1/drafts/{id}` | explicit drafts (cancel works while pending or scheduled) |
 | `POST /v1/permissions/request` / `GET /v1/permissions[/{id}]` | request/track a scoped grant |
+| `GET /v1/me` | the key's own access: role, rate, expiry, allowlist, active grants (never its blind spots) |
 | `GET /v1/health` | no auth; gateway/sidecar/link status |
 
 Admin endpoints (`Authorization: Bearer <ADMIN_TOKEN>`): `/v1/admin/keys`,
