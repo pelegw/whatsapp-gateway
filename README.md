@@ -162,7 +162,7 @@ Approve or reject from your phone instead of the console. Create a bot with
 
 1. Put the token in `.env` as `TELEGRAM_BOT_TOKEN` and redeploy once (the token is
    the *only* Telegram secret; it never leaves env).
-2. In `/admin` → **Telegram approvals**, click **Link my chat** — it shows a
+2. In `/admin` → **Channels** → **Telegram**, click **Link my chat** — it shows a
    one-time code; from your **private** Telegram chat send `/start <code>` to your
    bot within 5 minutes. That links the chat *and* binds your Telegram user (only
    you can approve, even if the chat were a group). Then flip **Enable**.
@@ -203,7 +203,7 @@ matching MCP tools). A send-capable key gets `202 {"status":"scheduled"}` and th
 gateway delivers at that time; a drafting key's schedule rides on the draft — you
 approve it now (card shows the delivery time) and it fires at `send_at`. Until it
 fires it's cancellable by the agent (`DELETE /v1/drafts/{id}`, `cancel_draft`) or
-by you (`/admin` → Scheduled sends → Cancel). Scheduled deliveries respect the
+by you (`/admin` → **Scheduled tasks** → Cancel). Scheduled deliveries respect the
 same rate limits as live sends, so a big batch scheduled for one instant trickles
 out at the key's normal rate over the next minutes rather than blasting.
 Validation: at least `SCHEDULE_MIN_LEAD_SECONDS` (30s) out, at most
@@ -252,7 +252,8 @@ discoverable via contact search; only the conversation is hidden.
 Admin endpoints (`Authorization: Bearer <ADMIN_TOKEN>`): `/v1/admin/keys`,
 `/v1/admin/drafts` + `/approve|/reject|/cancel` (cancel = a scheduled send),
 `/v1/admin/grants` + `/approve|/reject|/revoke`, `/v1/admin/privacy/chats`
-(list/add/remove the global private list), `/v1/admin/telegram`
+(list/add/remove the global private list) + `/v1/admin/privacy/resolve?q=`
+(name → JID candidates for the picker), `/v1/admin/telegram`
 (status/link/enable/test/unlink), `/v1/admin/audit`, `/v1/admin/status`,
 `/v1/admin/qr`. Interactive docs at `/docs`.
 
@@ -261,7 +262,7 @@ Admin endpoints (`Authorization: Bearer <ADMIN_TOKEN>`): `/v1/admin/keys`,
 - **Re-login** (you unlinked it, or WhatsApp expired the device after ~2 weeks
   of the phone being offline): sends fail with 503 while reads keep working.
   The sidecar clears the dead session and restarts into a fresh QR
-  automatically — just open the approvals page and rescan.
+  automatically — just open `/admin` (the QR appears on the Overview) and rescan.
 - **Logs**: `docker compose logs -f sidecar` (connection, QR) / `gateway`.
 - **Backup**: the `wa_data` volume **is your WhatsApp session** (full account
   keys) plus message archive; `gw_data` holds API keys/drafts/audit. Back up
