@@ -125,6 +125,9 @@
 
   form.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .7rem; align-items: end; }
   form.grid label { display: flex; flex-direction: column; gap: .28rem; font-size: .8rem; color: var(--muted); }
+  /* Picker fields must NOT be <label>s: a label forwards clicks to its first
+     labelable descendant, which with chips present is a chip's × button. */
+  form.grid .fld { display: flex; flex-direction: column; gap: .28rem; font-size: .8rem; color: var(--muted); }
   form.grid input, form.grid select {
     font: inherit; padding: .45rem .55rem; border-radius: 8px; border: 1px solid var(--line);
     background: var(--panel-2); color: var(--ink);
@@ -142,6 +145,37 @@
   .privrow:last-child { border-bottom: 0; }
   .privrow .jid { font-weight: 600; }
   .privrow .why { color: var(--muted); }
+
+  /* ---- name→JID picker (chips + search) ---- */
+  .picker {
+    display: flex; flex-wrap: wrap; gap: .3rem; align-items: center;
+    padding: .3rem .4rem; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--panel-2); cursor: text;
+  }
+  .picker input {
+    border: 0; background: transparent; color: var(--ink); font: inherit;
+    flex: 1; min-width: 9rem; padding: .22rem; outline: none;
+  }
+  .chip {
+    display: inline-flex; align-items: center; gap: .2rem; font-size: .8rem;
+    background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent);
+    border-radius: 999px; padding: .14rem .3rem .14rem .6rem; max-width: 100%;
+  }
+  .chip .chiptxt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 12rem; }
+  .chip .chipjid { opacity: .78; font-size: .72rem; white-space: nowrap; }
+  .chip .chipx { border: 0; background: transparent; color: inherit; cursor: pointer;
+    font-size: .95rem; padding: 0 .2rem; line-height: 1; }
+  .pickresults { margin-top: .3rem; }
+  .pickresults .empty { padding: .45rem 0; }
+  .pickrow { display: flex; align-items: center; gap: .5rem; padding: .32rem .2rem;
+    border-bottom: 1px solid var(--line); font-size: .85rem; }
+  .pickrow:last-child { border-bottom: 0; }
+  /* Names are other people's text: the NAME truncates, the JID never does —
+     a crafted long name must not be able to push the real address out of view. */
+  .pickrow .jid { font-weight: 600; max-width: 13rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pickrow .why { color: var(--muted); overflow-wrap: anywhere; }
+  .modalerr { color: var(--red); font-size: .88rem; white-space: pre-wrap; margin-top: .6rem; }
+  .modalerr:empty { display: none; }
   .soon { opacity: .6; }
   .soon .tag { font-size: .72rem; font-weight: 700; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: .1rem .5rem; margin-left: .5rem; }
 
@@ -279,10 +313,10 @@
               <option value="read-send">read-send</option>
             </select>
           </label>
-          <label>Auto-send to<input name="allowlist" placeholder="optional, comma-separated"></label>
-          <label>Never read<input name="readblock" placeholder="optional, comma-separated"></label>
-          <label>Only read<input name="readallow" placeholder="optional, comma-separated"></label>
           <label>Expires (days)<input name="expires" type="number" min="1" max="3650" placeholder="never"></label>
+          <div class="fld" style="grid-column:1/-1"><span>Auto-send to (empty = role default)</span><div id="pkCreateAllow"></div></div>
+          <div class="fld" style="grid-column:1/-1"><span>Never read (empty = none)</span><div id="pkCreateBlock"></div></div>
+          <div class="fld" style="grid-column:1/-1"><span>Only read (empty = unrestricted)</span><div id="pkCreateRAllow"></div></div>
           <button class="primary" type="submit">Create</button>
           <div class="formhelp" id="roleHelp"></div>
         </form>
@@ -312,11 +346,12 @@
         </select>
       </label>
       <label>Rate/min<input name="rate" type="number" min="1" max="60"></label>
-      <label style="grid-column:1/-1">Auto-send to<input name="allowlist" placeholder="comma-separated; empty = role default"></label>
-      <label style="grid-column:1/-1">Never read<input name="readblock" placeholder="comma-separated; empty = none"></label>
-      <label style="grid-column:1/-1">Only read<input name="readallow" placeholder="comma-separated; empty = unrestricted"></label>
-      <div class="formhelp">Changing the role re-derives the key's scopes. Read lists apply on top of the global private list.</div>
+      <div class="fld" style="grid-column:1/-1"><span>Auto-send to (empty = role default)</span><div id="pkEditAllow"></div></div>
+      <div class="fld" style="grid-column:1/-1"><span>Never read (empty = none)</span><div id="pkEditBlock"></div></div>
+      <div class="fld" style="grid-column:1/-1"><span>Only read (empty = unrestricted)</span><div id="pkEditRAllow"></div></div>
+      <div class="formhelp">Search by name — entries are stored as pinned JIDs, so renames can't change what a key may reach. Changing the role re-derives the key's scopes; read lists apply on top of the global private list.</div>
     </form>
+    <div class="modalerr" id="editErr"></div>
     <div class="actions">
       <button class="ghost" id="editCancel">Cancel</button>
       <button class="primary" id="editSave">Save changes</button>
@@ -354,7 +389,6 @@ const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls)
 const ago = (ts) => { const m = Math.round(Date.now() / 1000 - ts) / 60; return m < 1 ? "just now" : m < 60 ? Math.round(m) + " min ago" : Math.round(m / 60) + " h ago"; };
 const fmtDate = (ts) => ts ? new Date(ts * 1000).toLocaleDateString() : "—";
 const fmtWhen = (ts) => new Date(ts * 1000).toLocaleString();
-const csv = (v) => v.split(",").map(s => s.trim()).filter(Boolean);
 
 // ---- hash router ------------------------------------------------------------
 const VIEWS = ["overview", "requests", "scheduled", "channels", "privacy", "keys"];
@@ -554,16 +588,19 @@ async function refreshPrivacy() {
 // Name → JID picker. The resolve endpoint is display/selection only: what gets
 // stored (and enforced) is the pinned jid of the row the human clicks.
 const looksLikeAddress = (q) => q.includes("@") || /^\+?[0-9]{6,20}$/.test(q);
-let privTimer = null;
+let privTimer = null, privGen = 0;
 $("privQ").oninput = () => { clearTimeout(privTimer); privTimer = setTimeout(privSearch, 250); };
-$("privSearchForm").onsubmit = (e) => { e.preventDefault(); privSearch(); };
+$("privSearchForm").onsubmit = (e) => { e.preventDefault(); clearTimeout(privTimer); privSearch(); };
 async function privSearch() {
+  const g = ++privGen;                    // only the latest search may render
   const q = $("privQ").value.trim();
   const box = $("privResults"); box.replaceChildren();
   if (!q) return;
   let matches = [];
   try { matches = await api(`/v1/admin/privacy/resolve?q=${encodeURIComponent(q)}`); }
-  catch (e) { showErr(e); return; }
+  catch (e) { if (g === privGen) showErr(e); return; }
+  if (g !== privGen) return;
+  box.replaceChildren();
   for (const m of matches) {
     const row = el("div", "privrow");
     row.append(el("span", "jid", m.name || "(unnamed)"));
@@ -587,9 +624,123 @@ async function privAdd(jid, name, btn) {
   try {
     await api("/v1/admin/privacy/chats", { method: "POST",
       body: JSON.stringify({ jid, name, reason: $("privReason").value.trim() }) });
+    privGen++;                            // invalidate any in-flight search
     $("privQ").value = ""; $("privResults").replaceChildren();
   } catch (e) { showErr(e); btn.disabled = false; }
   refreshPrivacy();
+}
+
+// ---- reusable name→JID picker (chips + search) ------------------------------
+// Same resolver as Chat privacy (admin-gated, read-only). Selection only: what
+// each chip stores — and what the form submits — is the pinned JID; the name is
+// display sugar, so renames never change what a key may reach.
+function jidPicker(mount, placeholder) {
+  const chips = [];               // [{jid, name}]
+  const box = el("div", "picker");
+  const input = el("input");
+  input.placeholder = placeholder || "type a name, or paste a JID/phone";
+  const results = el("div", "pickresults");
+  box.append(input); mount.replaceChildren(box, results);
+  box.onclick = () => input.focus();
+
+  function paint() {
+    // Preserve focus: replaceChildren() detaches the input, which blurs it —
+    // without this, an async name-lookup repaint would eat the user's typing.
+    const hadFocus = document.activeElement === input;
+    box.replaceChildren();
+    for (const c of chips) {
+      const chip = el("span", "chip");
+      // Show the pinned JID's user part next to the name: the name is text
+      // other people control, so the number stays visible as ground truth.
+      const txt = el("span", "chiptxt", c.name || c.jid);
+      txt.title = c.jid;
+      chip.append(txt);
+      if (c.name) chip.append(el("span", "chipjid", "· " + c.jid.split("@")[0]));
+      const x = el("button", "chipx", "×");
+      x.type = "button"; x.title = "remove " + c.jid;
+      x.onclick = (e) => { e.stopPropagation(); chips.splice(chips.indexOf(c), 1); paint(); };
+      chip.append(x); box.append(chip);
+    }
+    box.append(input);
+    if (hadFocus) input.focus();
+  }
+  // gen invalidates in-flight searches: only the latest may render results.
+  let gen = 0;
+  function add(jid, name) {
+    if (!chips.some(c => c.jid === jid)) { chips.push({ jid, name: name || "" }); paint(); }
+    gen++; input.value = ""; results.replaceChildren(); input.focus();
+  }
+  let timer = null;
+  input.oninput = () => { clearTimeout(timer); timer = setTimeout(search, 250); };
+  input.onkeydown = (e) => {
+    if (e.key === "Enter") { e.preventDefault(); clearTimeout(timer); search(); }
+  };
+  async function search() {
+    const g = ++gen;
+    const q = input.value.trim(); results.replaceChildren();
+    if (!q) return;
+    let matches = [];
+    try { matches = await api(`/v1/admin/privacy/resolve?q=${encodeURIComponent(q)}&limit=8`); }
+    catch (e) { if (g === gen) showErr(e); return; }   // a superseded search stays silent
+    if (g !== gen) return;                       // a newer search or add() superseded us
+    results.replaceChildren();
+    for (const m of matches) {
+      const row = el("div", "pickrow");
+      row.append(el("span", "jid", m.name || "(unnamed)"), el("span", "why", `· ${m.kind} · ${m.jid}`));
+      const addBtn = el("button", "", "Add");
+      addBtn.type = "button"; addBtn.style.marginLeft = "auto";
+      addBtn.onclick = () => add(m.jid, m.name || "");
+      row.append(addBtn); results.append(row);
+    }
+    if (looksLikeAddress(q)) {
+      const row = el("div", "pickrow");
+      row.append(el("span", "jid", q), el("span", "why", "· use exactly as typed"));
+      const addBtn = el("button", "", "Add");
+      addBtn.type = "button"; addBtn.style.marginLeft = "auto";
+      addBtn.onclick = () => add(q, "");
+      row.append(addBtn); results.append(row);
+    } else if (!matches.length) {
+      results.append(el("div", "empty", "No matches — try another name, or paste a JID/phone."));
+    }
+  }
+  async function prettify() {
+    // Best-effort: fill display names for chips loaded as raw JIDs. The JID
+    // stays visible on the chip regardless (names are other people's text).
+    let changed = false;
+    await Promise.all(chips.map(async (c) => {
+      if (c.name) return;
+      try {
+        const m = await api(`/v1/admin/privacy/resolve?q=${encodeURIComponent(c.jid.split("@")[0])}&limit=5`);
+        const hit = m.find(x => x.jid === c.jid);
+        if (hit && hit.name) { c.name = hit.name; changed = true; }
+      } catch {}
+    }));
+    if (changed) paint();
+  }
+  return {
+    get: () => chips.map(c => c.jid),
+    set: (jids) => {
+      chips.length = 0;
+      for (const j of (jids || [])) chips.push({ jid: j, name: "" });
+      gen++; input.value = ""; results.replaceChildren(); paint(); prettify();
+    },
+    clear: () => { chips.length = 0; gen++; input.value = ""; results.replaceChildren(); paint(); },
+    // Leftover typed text on submit: an address auto-adds; anything else is
+    // returned so the caller can refuse to silently drop what the user typed.
+    flush: () => {
+      const q = input.value.trim();
+      if (!q) return null;
+      if (looksLikeAddress(q)) { add(q, ""); return null; }
+      return q;
+    },
+    // Close an open results dropdown; true if there was one (Escape handling).
+    // Kills the pending debounce too, so a dismissed dropdown can't reopen.
+    dismiss: () => {
+      const had = results.childElementCount > 0;
+      clearTimeout(timer); gen++; results.replaceChildren();
+      return had;
+    },
+  };
 }
 
 // ---- API keys ---------------------------------------------------------------
@@ -657,21 +808,39 @@ function banner(msg, key) {
 const roleSel = document.querySelector('#newKeyForm select[name=role]');
 const setRoleHelp = () => { $("roleHelp").textContent = ROLE_HELP[roleSel.value]; };
 roleSel.onchange = setRoleHelp; setRoleHelp();
+
+// Pickers for the three JID-list fields, create form + edit modal.
+const pkCreateAllow = jidPicker($("pkCreateAllow"), "search — who this key may auto-send to");
+const pkCreateBlock = jidPicker($("pkCreateBlock"), "search — chats this key may never read");
+const pkCreateRAllow = jidPicker($("pkCreateRAllow"), "search — the only chats this key may read");
+const pkEditAllow = jidPicker($("pkEditAllow"), "search — who this key may auto-send to");
+const pkEditBlock = jidPicker($("pkEditBlock"), "search — chats this key may never read");
+const pkEditRAllow = jidPicker($("pkEditRAllow"), "search — the only chats this key may read");
+
 $("newKeyForm").onsubmit = async (e) => {
   e.preventDefault(); showErr();
   const f = e.target;
+  // Don't silently drop text the user typed into a picker but never added:
+  // addresses auto-add; an unresolved name blocks the submit instead.
+  const leftover = [pkCreateAllow, pkCreateBlock, pkCreateRAllow]
+    .map(p => p.flush()).find(Boolean);
+  if (leftover) {
+    showErr(new Error(`"${leftover}" isn't added yet — pick a match from its search results, or clear the text.`));
+    return;
+  }
   const body = { name: f.name.value.trim(), role: f.role.value };
-  const allow = csv(f.allowlist.value);
+  const allow = pkCreateAllow.get();
   if (allow.length) body.allowlist = allow;
-  const readBlock = csv(f.readblock.value);
+  const readBlock = pkCreateBlock.get();
   if (readBlock.length) body.read_blocklist = readBlock;
-  const readAllow = csv(f.readallow.value);
+  const readAllow = pkCreateRAllow.get();
   if (readAllow.length) body.read_allowlist = readAllow;
   if (f.expires.value) body.expires_in_days = Number(f.expires.value);
   try {
     const r = await api("/v1/admin/keys", { method: "POST", body: JSON.stringify(body) });
     banner(`Created ${r.role} key "${body.name}": `, r.key);
     f.reset(); setRoleHelp();
+    pkCreateAllow.clear(); pkCreateBlock.clear(); pkCreateRAllow.clear();
   } catch (e) { showErr(e); }
   refreshKeys();
 };
@@ -683,34 +852,63 @@ function openEdit(id) {
   if (!k) return;
   editingId = id;
   $("editTitle").textContent = `Edit key “${k.name}”`;
+  $("editErr").textContent = "";
+  $("editSave").disabled = false;   // a close mid-save must not wedge the button
   const f = $("editForm");
   f.role.value = k.role;
   f.rate.value = k.rate_per_min;
-  f.allowlist.value = (k.send_allowlist || []).join(", ");
-  f.readblock.value = (k.read_blocklist || []).join(", ");
-  f.readallow.value = (k.read_allowlist || []).join(", ");
+  pkEditAllow.set(k.send_allowlist || []);
+  pkEditBlock.set(k.read_blocklist || []);
+  pkEditRAllow.set(k.read_allowlist || []);
   $("editOverlay").hidden = false;
 }
-function closeEdit() { $("editOverlay").hidden = true; editingId = null; }
+const EDIT_PICKERS = [pkEditAllow, pkEditBlock, pkEditRAllow];
+function closeEdit() {
+  EDIT_PICKERS.forEach(p => p.dismiss());
+  $("editErr").textContent = "";
+  $("editOverlay").hidden = true; editingId = null;
+}
 $("editCancel").onclick = closeEdit;
-$("editOverlay").onclick = (e) => { if (e.target === $("editOverlay")) closeEdit(); };
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeEdit(); });
+// Backdrop dismiss must check where the press STARTED: a text-selection drag
+// that ends on the backdrop fires a click targeting the overlay, and must not
+// throw the user's edits away.
+let downOnBackdrop = false;
+$("editOverlay").onmousedown = (e) => { downOnBackdrop = e.target === $("editOverlay"); };
+$("editOverlay").onclick = (e) => {
+  if (e.target === $("editOverlay") && downOnBackdrop) closeEdit();
+};
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || e.isComposing || $("editOverlay").hidden) return;
+  // First Escape closes an open search dropdown; only a bare Escape closes
+  // the modal (so dismissing results can't discard the user's edits).
+  const hadDropdown = EDIT_PICKERS.map(p => p.dismiss()).some(Boolean);
+  if (!hadDropdown) closeEdit();
+});
 $("editSave").onclick = async () => {
   if (editingId === null) return;
+  const leftover = EDIT_PICKERS.map(p => p.flush()).find(Boolean);
+  if (leftover) {
+    $("editErr").textContent = `"${leftover}" isn't added yet — pick a match from its search results, or clear the text.`;
+    return;
+  }
   const f = $("editForm");
   const body = {
     role: f.role.value,
     rate_per_min: Number(f.rate.value) || undefined,
-    allowlist: csv(f.allowlist.value),          // [] deliberately clears the list
-    read_blocklist: csv(f.readblock.value),
-    read_allowlist: csv(f.readallow.value),
+    allowlist: pkEditAllow.get(),               // [] deliberately clears the list
+    read_blocklist: pkEditBlock.get(),
+    read_allowlist: pkEditRAllow.get(),
   };
-  $("editSave").disabled = true; showErr();
+  $("editSave").disabled = true; $("editErr").textContent = "";
   try {
     await api(`/v1/admin/keys/${editingId}`, { method: "PATCH", body: JSON.stringify(body) });
+    $("editSave").disabled = false;
     closeEdit();
-  } catch (e) { showErr(e); }
-  $("editSave").disabled = false;
+  } catch (e) {
+    // Error must render INSIDE the modal — the page-top #err sits behind the overlay.
+    $("editErr").textContent = String(e.message || e);
+    $("editSave").disabled = false;
+  }
   refreshKeys();
 };
 
